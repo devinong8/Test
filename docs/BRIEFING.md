@@ -1,7 +1,7 @@
 # 10-Minute Implementation Briefing (script)
 
 **Setup before you start:** app running (`mvn spring-boot:run`), Swagger UI open at
-http://localhost:8080/swagger-ui.html, a terminal ready for `./demo.sh`, and `docs/DESIGN.md` in another tab.
+http://localhost:8080/swagger-ui.html, a terminal ready for `./acceptance-check.sh`, and `docs/DESIGN.md` in another tab.
 
 ---
 
@@ -48,7 +48,8 @@ one is guaranteed by the database, not just by an if-statement, and I prove it w
 ### 8:30–9:30 · Criterion 5: error handling and tests
 * One `@RestControllerAdvice`. Every error has the same envelope with a stable `code` for clients to branch on.
 * Show malformed JSON → clean 400 with the field name; unknown field → 400.
-* `mvn test` → 18 integration tests over real HTTP + real DB, with a controllable clock for time-based rules.
+* Run `./acceptance-check.sh` live: 56 PASS lines, grouped R1–R5 to match the brief.
+* `mvn test` → 24 integration tests on SQLite **and** PostgreSQL. Mutation-checked: removing any safeguard makes a test fail (`docs/BACKTEST_REPORT.md`).
 
 ### 9:30–10:00 · Close
 "Next steps: JWT auth so customer ID comes from the token, idempotency keys for safe retries, Flyway migrations,

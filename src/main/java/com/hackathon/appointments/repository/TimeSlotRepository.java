@@ -37,13 +37,15 @@ public interface TimeSlotRepository extends JpaRepository<TimeSlot, Long>, JpaSp
             select s from TimeSlot s
             where s.provider.id = :providerId
               and s.status <> com.hackathon.appointments.domain.SlotStatus.EXPIRED
+              and s.id <> :excludeSlotId
               and s.startTime < :endTime
               and s.endTime > :startTime
             """)
     @EntityGraph(attributePaths = "provider")
     List<TimeSlot> findOverlapping(@Param("providerId") Long providerId,
                                    @Param("startTime") LocalDateTime startTime,
-                                   @Param("endTime") LocalDateTime endTime);
+                                   @Param("endTime") LocalDateTime endTime,
+                                   @Param("excludeSlotId") Long excludeSlotId);
 
     @EntityGraph(attributePaths = "provider")
     Optional<TimeSlot> findByProviderIdAndStartTimeAndEndTime(Long providerId, LocalDateTime startTime, LocalDateTime endTime);

@@ -8,6 +8,7 @@ import com.hackathon.appointments.exception.BadRequestException;
 import com.hackathon.appointments.exception.ConflictException;
 import com.hackathon.appointments.exception.ErrorCode;
 import com.hackathon.appointments.exception.NotFoundException;
+import com.hackathon.appointments.repository.AppointmentRepository;
 import com.hackathon.appointments.repository.ProviderRepository;
 import com.hackathon.appointments.repository.TimeSlotRepository;
 import com.hackathon.appointments.web.dto.CreateSlotRequest;
@@ -35,12 +36,15 @@ public class SlotService {
 
     private final TimeSlotRepository slots;
     private final ProviderRepository providers;
+    private final AppointmentRepository appointments;
     private final AppProperties props;
     private final Clock clock;
 
-    public SlotService(TimeSlotRepository slots, ProviderRepository providers, AppProperties props, Clock clock) {
+    public SlotService(TimeSlotRepository slots, ProviderRepository providers, AppointmentRepository appointments,
+                       AppProperties props, Clock clock) {
         this.slots = slots;
         this.providers = providers;
+        this.appointments = appointments;
         this.props = props;
         this.clock = clock;
     }
@@ -80,7 +84,7 @@ public class SlotService {
 
         List<TimeSlot> created = new ArrayList<>();
         for (Range r : ranges) {
-            List<TimeSlot> clashes = slots.findOverlapping(providerId, r.start(), r.end());
+            List<TimeSlot> clashes = slots.findOverlapping(providerId, r.start(), r.end(), -1L);
             if (!clashes.isEmpty()) {
                 String ids = clashes.stream()
                         .map(s -> "#%d %s-%s (%s)".formatted(s.getId(), s.getStartTime(), s.getEndTime().toLocalTime(), s.getStatus()))
@@ -117,6 +121,56 @@ public class SlotService {
     }
 
     /* ------------------------------------------------------------------ provider: manage slots */
+
+    /**
+     * Reschedule a slot that nobody holds yet (AVAILABLE or LOCKED). Same validation as creation, and the
+     * overlap check ignores the slot itself. BOOKED slots must be cancelled first so a customer's booking
+     * never moves under them. A concurrent booking bumps the @Version and makes this update fail with 409.
+     */
+    @Transactional
+    public TimeSlot updateSlot(Long providerId, Long slotId, CreateSlotRequest req) {
+        LocalDateTime now = LocalDateTime.now(clock);
+        Range r = validateRange(req, now);
+        providers.findByIdForUpdate(providerId).orElseThrow(() -> DirectoryService.providerNotFound(providerId));
+        TimeSlot slot = getProviderSlot(providerId, slotId);
+        requireUnheld(slot, now, "rescheduled");
+        List<TimeSlot> clashes = slots.findOverlapping(providerId, r.start(), r.end(), slotId);
+        if (!clashes.isEmpty()) {
+            throw new ConflictException(ErrorCode.SLOT_OVERLAP, "Slot %s overlaps existing slot(s) for provider %d: %s"
+                    .formatted(r, providerId, clashes.stream().map(s -> "#" + s.getId()).collect(Collectors.joining(", "))));
+        }
+        slot.reschedule(r.start(), r.end(), now);
+        slots.saveAndFlush(slot);
+        return slot;
+    }
+
+    /**
+     * Remove a slot published by mistake. Only AVAILABLE/LOCKED slots with no booking history can be deleted;
+     * anything with history must be LOCKED instead so the audit trail of cancelled appointments is kept.
+     */
+    @Transactional
+    public void deleteSlot(Long providerId, Long slotId) {
+        LocalDateTime now = LocalDateTime.now(clock);
+        providers.findByIdForUpdate(providerId).orElseThrow(() -> DirectoryService.providerNotFound(providerId));
+        TimeSlot slot = getProviderSlot(providerId, slotId);
+        requireUnheld(slot, now, "deleted");
+        if (appointments.existsBySlotId(slotId)) {
+            throw new ConflictException(ErrorCode.SLOT_NOT_AVAILABLE,
+                    "Slot %d has booking history and cannot be deleted; lock it instead".formatted(slotId));
+        }
+        slots.delete(slot);
+        slots.flush();
+    }
+
+    private static void requireUnheld(TimeSlot slot, LocalDateTime now, String action) {
+        if (slot.hasStarted(now) || slot.getStatus() == SlotStatus.EXPIRED) {
+            throw new ConflictException(ErrorCode.SLOT_EXPIRED, "Slot %d has already started and cannot be %s".formatted(slot.getId(), action));
+        }
+        if (slot.getStatus() == SlotStatus.BOOKED) {
+            throw new ConflictException(ErrorCode.SLOT_ALREADY_BOOKED,
+                    "Slot %d is BOOKED and cannot be %s; the appointment must be cancelled first".formatted(slot.getId(), action));
+        }
+    }
 
     /** Provider temporarily blocks a slot (e.g. personal leave). Only AVAILABLE slots can be locked. */
     @Transactional

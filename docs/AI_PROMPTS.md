@@ -53,3 +53,11 @@ for judges) with a PostgreSQL profile for production.
 ### 6. Documentation prompts
 > Write the solution approach & design document, a README, a Postman collection, a curl demo script and a
 > 10-minute briefing script for the judges.
+
+### 7. Backtest prompt
+> Before showing the assessor, backtest against the requirements.
+
+The assistant decomposed each criterion into atomic statements, found five gaps (no slot update/delete, 400 vs 404
+for invalid booking ranges, unproven atomic rollback, a same-customer race on PostgreSQL, no concurrent-creation
+test), fixed them, ran everything on SQLite and PostgreSQL, mutation-checked the safeguards, and wrote
+`docs/BACKTEST_REPORT.md` plus the black-box `acceptance-check.sh`.

@@ -10,7 +10,7 @@ many people act at once.
 
 | # | Acceptance criterion | How it is met | Proof |
 |---|---|---|---|
-| 1 | Providers define slots (provider ID, date, start, end); no overlap per provider; initial status AVAILABLE | `POST /providers/{id}/slots` (+ `/batch`). `SlotService.createSlots` validates the range, **locks the provider row**, runs an interval-overlap query, then saves with `AVAILABLE` | `DefineSlots` tests |
+| 1 | Providers define slots (provider ID, date, start, end); no overlap per provider; initial status AVAILABLE | `POST /providers/{id}/slots` (+ `/batch`, `PUT` reschedule, `DELETE`, `/lock`, `/unlock`). `SlotService.createSlots` validates the range, **locks the provider row**, runs an interval-overlap query, then saves with `AVAILABLE` | `DefineSlots` tests |
 | 2 | Query/filter available slots by provider, date range, category; paginated + sorted; exclude BOOKED/LOCKED/EXPIRED | `GET /slots/available`: JPA Specifications always add `status = AVAILABLE AND start_time > now`, plus optional filters. Sort fields are whitelisted; page size is capped | `SearchSlots` tests |
 | 3 | Robust booking (customer ID, slot ID / time range) | `POST /appointments` accepts either form. Checks run in order: customer → slot → not started → AVAILABLE → customer has no overlapping booking → **atomic compare-and-set** on the slot | `Booking` tests incl. 20-thread race |
 | 4 | Validate ownership + eligibility; CANCELLED; release slot to AVAILABLE atomically; record timestamp + reason | `POST /appointments/{id}/cancel`: owner check (403), already-cancelled (409), cut-off window (409). Appointment update + slot release happen in **one `@Transactional`**; if the release fails, everything rolls back | `Cancellation` tests |
@@ -105,7 +105,7 @@ so an illegal or racing transition simply changes zero rows and becomes a 409.
 | Two requests create overlapping slots for one provider at the same moment | Provider row is locked with `PESSIMISTIC_WRITE` (`SELECT … FOR UPDATE` on PostgreSQL) before the overlap check, serialising slot creation per provider. A PostgreSQL `EXCLUDE USING gist` constraint is included (commented) as a database-level option. |
 | Cancellation half-succeeds (appointment cancelled but slot still BOOKED) | Both writes are in one transaction; if the slot release updates 0 rows, an exception rolls back the cancellation too. |
 | A slot that has started is still shown or booked | Search and booking check `start_time > now` directly, so correctness does not depend on the background job. A scheduled sweeper also persists `EXPIRED` for reporting. |
-| Customer double-books themselves across providers | Overlap check across the customer's BOOKED appointments → 409 `CUSTOMER_DOUBLE_BOOKING`. |
+| Customer double-books themselves across providers | Customer row locked for the booking, then overlap check across the customer's BOOKED appointments → 409 `CUSTOMER_DOUBLE_BOOKING`. Holds under concurrency (race test). |
 | Late cancellation | Configurable cut-off (default 60 min) → 409 `CANCELLATION_WINDOW_CLOSED`. |
 | Bad input | Bean Validation on DTOs, `fail-on-unknown-properties` (typos → 400), whitelisted sort fields, bounded page size, typed path/query params. |
 | Leaking data across providers | A slot fetched under the wrong provider returns 404, not the other provider's data. |
@@ -140,13 +140,18 @@ it; `message` is human-readable.
 
 ## 9. Testing
 
-`AppointmentApiIntegrationTest`: 18 end-to-end tests through HTTP (MockMvc) against a real SQLite database,
+Full results and a requirement-by-requirement traceability matrix: [`BACKTEST_REPORT.md`](BACKTEST_REPORT.md).
+Three layers: 24 integration tests (run on SQLite **and** PostgreSQL), 56 black-box HTTP checks
+(`acceptance-check.sh`), and mutation checks proving each safeguard is covered.
+
+`AppointmentApiIntegrationTest`: 24 end-to-end tests through HTTP (MockMvc) against a real SQLite database,
 using a controllable `MutableClock` to simulate time passing.
 
 * Define slots: AVAILABLE on create, overlap/enclose/inside → 409, back-to-back allowed, invalid ranges → 400, unknown provider → 404, batch all-or-nothing
 * Search: excludes BOOKED / LOCKED / EXPIRED, category / provider / date filters, pagination + sort, bad params → 400
-* Booking: by id and by time range, double booking, locked/started slot, customer overlap, 404s, validation, **20-thread race**
-* Cancellation: timestamp + reason recorded, slot released and re-bookable, owner-only, twice, cut-off, 404, empty reason
+* Booking: by id and by time range, double booking, locked/started slot, customer overlap, 404s, validation, **20-thread race**, same-customer race, invalid range → 400
+* Slot management: reschedule, delete, booked/history slots protected, concurrent overlapping creates → exactly 1
+* Cancellation: atomic rollback proven by fault injection, timestamp + reason recorded, slot released and re-bookable, owner-only, twice, cut-off, 404, empty reason
 * Expiry sweeper
 
 ## 10. Trade-offs and next steps

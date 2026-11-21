@@ -16,6 +16,8 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
+import com.hackathon.appointments.web.dto.CreateSlotRequest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
@@ -31,14 +33,16 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest
 @AutoConfigureMockMvc
-@ActiveProfiles("test")
+@ActiveProfiles(resolver = TestProfiles.class)
 class AppointmentApiIntegrationTest {
 
     static final ZoneId SGT = ZoneId.of("Asia/Singapore");
@@ -67,6 +71,7 @@ class AppointmentApiIntegrationTest {
     @Autowired MutableClock clock;
     @Autowired AppointmentService appointmentService;
     @Autowired SlotService slotService;
+    @Autowired JdbcTemplate jdbc;
 
     final LocalDate tomorrow = LocalDate.of(2026, 11, 22);
 
@@ -116,6 +121,33 @@ class AppointmentApiIntegrationTest {
         return postJson("/api/v1/appointments/" + appointmentId + "/cancel", Map.of("customerId", customerId, "reason", reason));
     }
 
+    /** Fires all tasks at the same instant; returns {successes, conflicts}. Any other exception fails the test. */
+    static int[] race(List<Callable<Object>> tasks) throws Exception {
+        ExecutorService pool = Executors.newFixedThreadPool(tasks.size());
+        CountDownLatch go = new CountDownLatch(1);
+        AtomicInteger ok = new AtomicInteger();
+        AtomicInteger conflict = new AtomicInteger();
+        List<Future<?>> futures = new ArrayList<>();
+        for (Callable<Object> t : tasks) {
+            futures.add(pool.submit(() -> {
+                go.await();
+                try {
+                    t.call();
+                    ok.incrementAndGet();
+                } catch (ConflictException e) {
+                    conflict.incrementAndGet();
+                }
+                return null;
+            }));
+        }
+        go.countDown();
+        for (Future<?> f : futures) {
+            f.get(60, TimeUnit.SECONDS);
+        }
+        pool.shutdown();
+        return new int[]{ok.get(), conflict.get()};
+    }
+
     /* ------------------------------------------------------------------ 1. slot definition */
 
     @Nested
@@ -158,6 +190,59 @@ class AppointmentApiIntegrationTest {
                     .andExpect(jsonPath("$.fieldErrors[*].field", hasItems("startTime", "endTime")));
             postJson("/api/v1/providers/" + p + "/slots", Map.of("date", tomorrow.toString(), "startTime", "9am", "endTime", "10:00"))
                     .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        void providerCanRescheduleAndDeleteUnbookedSlots() throws Exception {
+            long p = newProvider("LEGAL");
+            long s = slot(p, tomorrow, "09:00", "10:00");
+            slot(p, tomorrow, "11:00", "12:00");
+            String url = "/api/v1/providers/" + p + "/slots/" + s;
+            mvc.perform(put(url).contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"date\":\"" + tomorrow + "\",\"startTime\":\"09:30\",\"endTime\":\"10:30\"}"))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.startTime").value("09:30"));
+            // moving onto its own old time is fine (excludes itself); onto another slot is not
+            mvc.perform(put(url).contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"date\":\"" + tomorrow + "\",\"startTime\":\"10:30\",\"endTime\":\"11:30\"}"))
+                    .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("SLOT_OVERLAP"));
+            mvc.perform(put(url).contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"date\":\"" + tomorrow + "\",\"startTime\":\"10:30\",\"endTime\":\"10:00\"}"))
+                    .andExpect(status().isBadRequest());
+            mvc.perform(delete(url)).andExpect(status().isNoContent());
+            mvc.perform(get(url)).andExpect(status().isNotFound());
+            mvc.perform(delete(url)).andExpect(status().isNotFound());
+        }
+
+        @Test
+        void bookedOrPreviouslyBookedSlotsCannotBeChangedOrDeleted() throws Exception {
+            long p = newProvider("LEGAL");
+            long c = newCustomer();
+            long s = slot(p, tomorrow, "09:00", "10:00");
+            long a = booked(c, s);
+            String url = "/api/v1/providers/" + p + "/slots/" + s;
+            mvc.perform(put(url).contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"date\":\"" + tomorrow + "\",\"startTime\":\"13:00\",\"endTime\":\"14:00\"}"))
+                    .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("SLOT_ALREADY_BOOKED"));
+            mvc.perform(delete(url)).andExpect(status().isConflict());
+            mvc.perform(post(url + "/lock")).andExpect(status().isConflict());
+            cancel(a, c, "changed mind").andExpect(status().isOk());
+            mvc.perform(delete(url)).andExpect(status().isConflict()) // history must be kept
+                    .andExpect(jsonPath("$.message", containsString("lock it instead")));
+        }
+
+        @Test
+        void concurrentOverlappingSlotCreationProducesExactlyOneSlot() throws Exception {
+            long p = newProvider("LEGAL");
+            List<Callable<Object>> tasks = new ArrayList<>();
+            for (int i = 0; i < 10; i++) {
+                String start = "09:%02d".formatted(i * 5); // 09:00, 09:05 ... all overlap each other
+                tasks.add(() -> slotService.createSlot(p, new CreateSlotRequest(tomorrow,
+                        LocalTime.parse(start), LocalTime.parse(start).plusHours(1))));
+            }
+            int[] result = race(tasks);
+            assertThat(result[0]).isEqualTo(1);
+            assertThat(result[1]).isEqualTo(9);
+            mvc.perform(get("/api/v1/providers/" + p + "/slots")).andExpect(jsonPath("$.totalElements").value(1));
         }
 
         @Test
@@ -290,6 +375,28 @@ class AppointmentApiIntegrationTest {
         }
 
         @Test
+        void bookingWithInvalidTimeRangeIs400() throws Exception {
+            long p = newProvider("LEGAL");
+            postJson("/api/v1/appointments", Map.of("customerId", newCustomer(), "providerId", p, "date", tomorrow.toString(),
+                    "startTime", "11:00", "endTime", "10:00"))
+                    .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_TIME_RANGE"));
+        }
+
+        @Test
+        void sameCustomerRacingForOverlappingSlotsGetsExactlyOne() throws Exception {
+            long c = newCustomer();
+            List<Callable<Object>> tasks = new ArrayList<>();
+            for (int i = 0; i < 10; i++) {
+                long s = slot(newProvider("LEGAL"), tomorrow, "09:00", "10:00"); // 10 providers, same hour
+                tasks.add(() -> appointmentService.book(new BookAppointmentRequest(c, s, null, null, null, null, null)));
+            }
+            int[] result = race(tasks);
+            assertThat(result[0]).isEqualTo(1);
+            assertThat(result[1]).isEqualTo(9);
+            mvc.perform(get("/api/v1/customers/" + c + "/appointments")).andExpect(jsonPath("$.totalElements").value(1));
+        }
+
+        @Test
         void customerCannotHoldOverlappingBookings() throws Exception {
             long c = newCustomer();
             long a = slot(newProvider("LEGAL"), tomorrow, "09:00", "10:00");
@@ -375,6 +482,25 @@ class AppointmentApiIntegrationTest {
             booked(other, s); // slot can be booked again
             mvc.perform(get("/api/v1/customers/" + c + "/appointments?status=CANCELLED"))
                     .andExpect(jsonPath("$.totalElements").value(1));
+        }
+
+        @Test
+        void cancellationIsAtomicAndRollsBackIfSlotCannotBeReleased() throws Exception {
+            long c = newCustomer();
+            long s = slot(newProvider("LEGAL"), tomorrow, "09:00", "10:00");
+            long a = booked(c, s);
+            // Simulate corruption / an out-of-band change: the slot is no longer BOOKED.
+            jdbc.update("update time_slot set status = 'LOCKED' where id = ?", s);
+
+            cancel(a, c, "should roll back").andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.code").value("CONCURRENT_MODIFICATION"));
+
+            // Nothing was half-written: appointment is still BOOKED with no cancellation data.
+            mvc.perform(get("/api/v1/appointments/" + a))
+                    .andExpect(jsonPath("$.status").value("BOOKED"))
+                    .andExpect(jsonPath("$.cancelledAt").doesNotExist())
+                    .andExpect(jsonPath("$.cancellationReason").doesNotExist());
+            assertThat(jdbc.queryForObject("select status from time_slot where id = ?", String.class, s)).isEqualTo("LOCKED");
         }
 
         @Test

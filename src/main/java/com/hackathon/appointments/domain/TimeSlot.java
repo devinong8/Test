@@ -56,6 +56,12 @@ public class TimeSlot {
         return !startTime.isAfter(now);
     }
 
+    public void reschedule(LocalDateTime newStart, LocalDateTime newEnd, LocalDateTime now) {
+        this.startTime = newStart;
+        this.endTime = newEnd;
+        this.updatedAt = now;
+    }
+
     public void changeStatus(SlotStatus newStatus, LocalDateTime now) {
         this.status = newStatus;
         this.updatedAt = now;

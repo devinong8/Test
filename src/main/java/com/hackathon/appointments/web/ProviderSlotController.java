@@ -76,6 +76,22 @@ public class ProviderSlotController {
         return SlotResponse.from(slotService.getProviderSlot(providerId, slotId));
     }
 
+    @Operation(summary = "Reschedule an AVAILABLE or LOCKED slot",
+            description = "Same rules as creation; overlap check excludes the slot itself. 409 if BOOKED, started or overlapping")
+    @PutMapping("/{slotId}")
+    public SlotResponse update(@PathVariable @Positive Long providerId, @PathVariable @Positive Long slotId,
+                               @Valid @RequestBody CreateSlotRequest req) {
+        return SlotResponse.from(slotService.updateSlot(providerId, slotId, req));
+    }
+
+    @Operation(summary = "Delete an AVAILABLE or LOCKED slot that has never been booked",
+            description = "409 if BOOKED, started, or has booking history (lock it instead)")
+    @DeleteMapping("/{slotId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void delete(@PathVariable @Positive Long providerId, @PathVariable @Positive Long slotId) {
+        slotService.deleteSlot(providerId, slotId);
+    }
+
     @Operation(summary = "Lock an AVAILABLE slot so it cannot be booked", description = "409 if not AVAILABLE")
     @PostMapping("/{slotId}/lock")
     public SlotResponse lock(@PathVariable @Positive Long providerId, @PathVariable @Positive Long slotId) {

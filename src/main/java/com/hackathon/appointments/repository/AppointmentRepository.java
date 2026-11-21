@@ -18,6 +18,8 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long> 
     @Query("select a from Appointment a where a.id = :id")
     Optional<Appointment> findDetailedById(@Param("id") Long id);
 
+    boolean existsBySlotId(Long slotId);
+
     @EntityGraph(attributePaths = {"customer", "slot", "slot.provider"})
     Page<Appointment> findByCustomerId(Long customerId, Pageable pageable);
 

@@ -12,8 +12,9 @@ springdoc OpenAPI / Swagger UI · JUnit 5 + MockMvc.
 | Solution approach & design document | [`docs/DESIGN.md`](docs/DESIGN.md) |
 | AI prompts | [`docs/AI_PROMPTS.md`](docs/AI_PROMPTS.md) |
 | 10-minute briefing script | [`docs/BRIEFING.md`](docs/BRIEFING.md) |
+| **Backtest report** (requirements traceability + results) | [`docs/BACKTEST_REPORT.md`](docs/BACKTEST_REPORT.md) |
 | Postman collection | [`postman/AppointmentSystem.postman_collection.json`](postman/AppointmentSystem.postman_collection.json) |
-| cURL demo script | [`demo.sh`](demo.sh) |
+| Black-box acceptance check (cURL, PASS/FAIL per requirement) | [`acceptance-check.sh`](acceptance-check.sh) |
 
 ## Run it
 
@@ -39,8 +40,9 @@ java -jar target/appointment-management-1.0.0.jar --spring.profiles.active=postg
 ## Test it
 
 ```bash
-mvn test        # 18 integration tests incl. a 20-thread double-booking race
-./demo.sh       # live walkthrough with curl against a running server
+mvn test                                        # 24 integration tests (SQLite)
+mvn test -Dtest.profiles=test,postgres,pgtest   # same suite on PostgreSQL
+./acceptance-check.sh                           # 56 black-box checks against a running server
 ```
 
 ## API summary (base `/api/v1`)
@@ -55,6 +57,8 @@ mvn test        # 18 integration tests incl. a 20-thread double-booking race
 | POST | `/providers/{pid}/slots/batch` | Create many slots, all-or-nothing | 400, 404, 409 |
 | GET | `/providers/{pid}/slots` | Provider's slots, any status, paged | 400, 404 |
 | GET | `/providers/{pid}/slots/{sid}` | One slot | 404 |
+| PUT | `/providers/{pid}/slots/{sid}` | Reschedule an unbooked slot | 400, 404, 409 |
+| DELETE | `/providers/{pid}/slots/{sid}` | Delete a never-booked slot | 404, 409 |
 | POST | `/providers/{pid}/slots/{sid}/lock` | AVAILABLE → LOCKED | 404, 409 |
 | POST | `/providers/{pid}/slots/{sid}/unlock` | LOCKED → AVAILABLE | 404, 409 |
 | GET | `/slots/available` | **Customer search**: `providerId`, `serviceCategory`, `fromDate`, `toDate`, `page`, `size`, `sort` | 400 |

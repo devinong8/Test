@@ -6,6 +6,7 @@ import com.hackathon.appointments.domain.AppointmentStatus;
 import com.hackathon.appointments.domain.Customer;
 import com.hackathon.appointments.domain.SlotStatus;
 import com.hackathon.appointments.domain.TimeSlot;
+import com.hackathon.appointments.exception.BadRequestException;
 import com.hackathon.appointments.exception.ConflictException;
 import com.hackathon.appointments.exception.ErrorCode;
 import com.hackathon.appointments.exception.ForbiddenException;
@@ -50,7 +51,7 @@ public class AppointmentService {
 
     /**
      * Books a slot. Validation order gives the most useful error first:
-     * customer exists (404) -> slot exists (404) -> slot not started (409) -> slot AVAILABLE (409)
+     * valid time range (400) -> customer exists (404) -> slot exists (404) -> slot not started (409) -> slot AVAILABLE (409)
      * -> customer has no overlapping booking (409) -> atomic claim of the slot (409 if lost the race).
      * <p>
      * The atomic claim is {@code UPDATE time_slot SET status='BOOKED' WHERE id=? AND status='AVAILABLE'}.
@@ -60,7 +61,12 @@ public class AppointmentService {
     @Transactional
     public Appointment book(BookAppointmentRequest req) {
         LocalDateTime now = LocalDateTime.now(clock);
-        Customer customer = customers.findById(req.customerId())
+        if (req.byTimeRange() && !req.endTime().isAfter(req.startTime())) {
+            throw new BadRequestException(ErrorCode.INVALID_TIME_RANGE,
+                    "endTime (%s) must be after startTime (%s)".formatted(req.endTime(), req.startTime()));
+        }
+        // Lock the customer row: serialises this customer's concurrent bookings so the overlap check below is reliable.
+        Customer customer = customers.findByIdForUpdate(req.customerId())
                 .orElseThrow(() -> DirectoryService.customerNotFound(req.customerId()));
 
         TimeSlot slot = resolveSlot(req);
