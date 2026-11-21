@@ -1,0 +1,9 @@
+spring:
+  datasource:
+    url: jdbc:sqlite:target/test-db/it.db?foreign_keys=on&busy_timeout=5000
+app:
+  seed-demo-data: false
+  expiry-sweep-interval-ms: 3600000
+logging:
+  level:
+    com.hackathon: WARN
