@@ -44,6 +44,7 @@ java -jar target/appointment-management-1.0.0.jar --spring.profiles.active=postg
 mvn test                                        # 24 integration tests (SQLite)
 mvn test -Dtest.profiles=test,postgres,pgtest   # same suite on PostgreSQL
 ./acceptance-check.sh                           # 56 black-box checks against a running server
+python3 perf/loadtest.py                        # load test (then perf/integrity-check.sql on PostgreSQL)
 ```
 
 ## API summary (base `/api/v1`)

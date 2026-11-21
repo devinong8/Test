@@ -10,6 +10,33 @@
 | Black-box acceptance check over HTTP (`./acceptance-check.sh`) | **56 / 56 pass** | **56 / 56 pass** |
 | Mutation check: each safeguard removed → a test must fail | n/a | **6 / 6 caught** |
 
+## Performance and integrity under load (PostgreSQL 16)
+
+`perf/loadtest.py` (Python standard library only) against the running server; app, database and load generator share one
+4-CPU cloud container, so these are a floor, not a benchmark.
+
+| Scenario | Requests | Throughput | p50 | p95 | p99 | Result |
+|---|---|---|---|---|---|---|
+| Book 1,000 different slots, 50 parallel clients | 1,000 | 413 req/s | 104 ms | 278 ms | 392 ms | 1,000 × 201 |
+| Search with mixed filters, 50 parallel clients | 2,000 | 967 req/s | 39 ms | 116 ms | 159 ms | 2,000 × 200 |
+| 200 customers, one slot, same instant | 200 | 802 req/s | 94 ms | 167 ms | 197 ms | **1 × 201, 199 × 409** |
+
+Database checked afterwards with `perf/integrity-check.sql`: 1,001 BOOKED appointments = 1,001 BOOKED slots;
+0 slots with more than one active booking; 0 slots whose status disagrees with their bookings; 0 customers with overlapping bookings.
+
+## Test coverage (JaCoCo, PostgreSQL run)
+
+| Package | Line coverage | Branch coverage |
+|---|---|---|
+| **Overall** | **85.9 %** (456/531) | **74.2 %** (132/178) |
+| service (business rules) | 93.5 % | 81.5 % |
+| web (controllers) | 93.8 % | n/a |
+| domain | 93.7 % | 100 % |
+| exception (error handling) | 77.2 % | 64.3 % |
+| config | 22.2 % | 0 % (the demo-data seeder is switched off in tests) |
+
+Report: `target/site/jacoco/index.html` after `mvn test`.
+
 ## Method
 
 1. **Requirement decomposition.** Each acceptance criterion in the brief was split into atomic, testable statements (R1.x … R5.x below).

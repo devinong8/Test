@@ -1,0 +1,54 @@
+{
+  "run": "00690897",
+  "environment": {
+    "python": "3.13.18",
+    "machine": "x86_64",
+    "cpus": 4,
+    "note": "app, PostgreSQL and load generator on the same cloud container"
+  },
+  "results": [
+    {
+      "scenario": "Book 1,000 different slots (50 parallel clients)",
+      "requests": 1000,
+      "seconds": 2.42,
+      "req_per_sec": 413.1,
+      "p50_ms": 104.3,
+      "p95_ms": 278.3,
+      "p99_ms": 392.0,
+      "max_ms": 570.6,
+      "mean_ms": 116.2,
+      "status_codes": {
+        "201": 1000
+      }
+    },
+    {
+      "scenario": "Search 2,000 times, mixed filters (50 parallel clients)",
+      "requests": 2000,
+      "seconds": 2.07,
+      "req_per_sec": 967.1,
+      "p50_ms": 38.9,
+      "p95_ms": 116.2,
+      "p99_ms": 159.3,
+      "max_ms": 240.0,
+      "mean_ms": 49.1,
+      "status_codes": {
+        "200": 2000
+      }
+    },
+    {
+      "scenario": "200 customers, one slot, same instant",
+      "requests": 200,
+      "seconds": 0.25,
+      "req_per_sec": 801.6,
+      "p50_ms": 94.1,
+      "p95_ms": 167.2,
+      "p99_ms": 196.8,
+      "max_ms": 199.8,
+      "mean_ms": 100.4,
+      "status_codes": {
+        "201": 1,
+        "409": 199
+      }
+    }
+  ]
+}
