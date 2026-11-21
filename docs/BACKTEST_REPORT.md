@@ -10,6 +10,20 @@
 | Black-box acceptance check over HTTP (`./acceptance-check.sh`) | **56 / 56 pass** | **56 / 56 pass** |
 | Mutation check: each safeguard removed → a test must fail | n/a | **6 / 6 caught** |
 
+## Continuous integration (GitHub Actions)
+
+`.github/workflows/ci.yml` runs on every push and pull request. Run #1
+(https://github.com/devinong8/Test/actions/runs/44860360275) passed all three jobs in about 2 minutes:
+
+| Job | What it proves | Result |
+|---|---|---|
+| Tests · SQLite | 24 integration tests | passed |
+| Tests · PostgreSQL 16 + coverage | same 24 tests on a real multi-connection database; JaCoCo report | passed |
+| Acceptance + load + integrity | 56/56 acceptance checks; 1,000 bookings at 565 req/s (all 201); 2,000 searches at 1,275 req/s; 200 simultaneous bookings of one slot → 1 × 201, 199 × 409; `perf/integrity-assert.sql` → 1,004 booked appointments = 1,004 booked slots, 0 violations | passed |
+
+The integrity step raises an error, and so fails the build, on any double booking, any slot whose status disagrees
+with its bookings, or any customer holding overlapping bookings.
+
 ## Performance and integrity under load (PostgreSQL 16)
 
 `perf/loadtest.py` (Python standard library only) against the running server; app, database and load generator share one
