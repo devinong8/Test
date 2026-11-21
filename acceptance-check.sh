@@ -5,6 +5,7 @@
 #   mvn spring-boot:run          # in another terminal
 #   ./acceptance-check.sh        # or: BASE_URL=http://host:8080 ./acceptance-check.sh
 #   VERBOSE=1 ./acceptance-check.sh   # also print every response body
+#   RECORD=run.tsv ./acceptance-check.sh   # also record every request/response and check result
 #
 # Needs only bash + curl. Creates its own providers/customers so it can be run repeatedly.
 set -u
@@ -25,6 +26,7 @@ req() {
   else out=$(curl -s -X "$1" -w $'\n%{http_code}' "$U$2"); fi
   CODE=${out##*$'\n'}; BODY=${out%$'\n'*}
   [ -n "${VERBOSE:-}" ] && printf '      %s %s -> %s %s\n' "$1" "$2" "$CODE" "$BODY"
+  [ -n "${RECORD:-}" ] && printf 'REQ\t%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$(printf '%s' "${3:-}" | base64 | tr -d '\n')" "$CODE" "$(printf '%s' "$BODY" | base64 | tr -d '\n')" >>"$RECORD"
   return 0
 }
 # check ID DESCRIPTION EXPECTED_CODE [must-contain...]
@@ -33,6 +35,7 @@ check() {
   local ok=1
   [ "$CODE" = "$want" ] || ok=0
   for needle in "$@"; do case "$BODY" in *"$needle"*) ;; *) ok=0;; esac; done
+  [ -n "${RECORD:-}" ] && printf 'CHECK\t%s\t%s\t%s\t%s\t%s\n' "$id" "$desc" "$want" "$CODE" "$ok" >>"$RECORD"
   if [ $ok = 1 ]; then PASS=$((PASS+1)); printf "  ${G}PASS${N} %-6s %-62s [%s]\n" "$id" "$desc" "$CODE"
   else FAIL=$((FAIL+1)); printf "  ${R}FAIL${N} %-6s %-62s [got %s, want %s %s]\n      %s\n" "$id" "$desc" "$CODE" "$want" "$*" "${BODY:0:300}"; fi
 }

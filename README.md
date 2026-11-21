@@ -12,6 +12,7 @@ springdoc OpenAPI / Swagger UI · JUnit 5 + MockMvc.
 | Solution approach & design document | [`docs/DESIGN.md`](docs/DESIGN.md) |
 | AI prompts | [`docs/AI_PROMPTS.md`](docs/AI_PROMPTS.md) |
 | 10-minute briefing script | [`docs/BRIEFING.md`](docs/BRIEFING.md) |
+| **Visual verification report** (open in a browser) | [`docs/verification-report.html`](docs/verification-report.html) |
 | **Backtest report** (requirements traceability + results) | [`docs/BACKTEST_REPORT.md`](docs/BACKTEST_REPORT.md) |
 | Postman collection | [`postman/AppointmentSystem.postman_collection.json`](postman/AppointmentSystem.postman_collection.json) |
 | Black-box acceptance check (cURL, PASS/FAIL per requirement) | [`acceptance-check.sh`](acceptance-check.sh) |

@@ -1,0 +1,435 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>BE1 Appointment Backend</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: a verification report. Summary first, then criteria as a scannable ledger with expandable evidence,
+   then the mechanisms that make it correct, then the backtest. Single column, 1040px max. */
+:root {
+  --bg: #f5f6f4;
+  --surface: #ffffff;
+  --sunk: #eceeea;
+  --ink: #17201e;
+  --muted: #5b6662;
+  --line: #d9ddd8;
+  --accent: #0d5c63;
+  --accent-soft: #dcebec;
+  --ok: #1d7a46;  --ok-soft: #dff1e6;
+  --warn: #9a6200; --warn-soft: #fbeed3;
+  --info: #3a5a8c; --info-soft: #e2e9f5;
+  --conf: #b2411f; --conf-soft: #fbe3da;
+  --code-bg: #f0f2ef;
+  --f-display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --f-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #111615; --surface: #182020; --sunk: #0d1211; --ink: #e4ebe8; --muted: #94a29d; --line: #2a3533;
+  --accent: #5fb8bf; --accent-soft: #173638;
+  --ok: #5cc98a; --ok-soft: #15301f; --warn: #e3ad4f; --warn-soft: #33270f;
+  --info: #8fb0e6; --info-soft: #1a2538; --conf: #f08a66; --conf-soft: #3a1d13; --code-bg: #0f1514;
+  color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #111615; --surface: #182020; --sunk: #0d1211; --ink: #e4ebe8; --muted: #94a29d; --line: #2a3533;
+  --accent: #5fb8bf; --accent-soft: #173638;
+  --ok: #5cc98a; --ok-soft: #15301f; --warn: #e3ad4f; --warn-soft: #33270f;
+  --info: #8fb0e6; --info-soft: #1a2538; --conf: #f08a66; --conf-soft: #3a1d13; --code-bg: #0f1514;
+  color-scheme: dark; }
+
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.55 var(--f-body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.wrap { max-width: 1040px; margin: 0 auto; padding-block: 40px 72px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 56px; }
+h1, h2, h3 { font-family: var(--f-display); text-wrap: balance; margin: 0; letter-spacing: -0.01em; }
+h1 { font-size: clamp(30px, 5vw, 44px); line-height: 1.05; font-weight: 700; }
+h2 { font-size: 26px; font-weight: 600; }
+h3 { font-size: 18px; font-weight: 600; }
+p { margin: 0; }
+.eyebrow { font: 500 12px/1 var(--f-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+.lede { color: var(--muted); max-width: 66ch; font-size: 16px; }
+code, .mono { font-family: var(--f-mono); font-size: 0.9em; }
+section { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; min-width: 0; }
+.sec-head { display: grid; gap: 6px; }
+.sec-head p { color: var(--muted); max-width: 70ch; }
+
+/* header */
+header { display: grid; gap: 14px; }
+.meta { display: flex; flex-wrap: wrap; gap: 8px 18px; color: var(--muted); font: 13px var(--f-mono); }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 1px; background: var(--line);
+  border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin-top: 10px; }
+.stat { background: var(--surface); padding: 16px 18px; display: grid; gap: 4px; align-content: start; }
+.stat b { font: 600 30px/1.1 var(--f-display); font-variant-numeric: tabular-nums; }
+.stat b small { font-size: 17px; color: var(--muted); font-weight: 500; }
+.stat span { color: var(--muted); font-size: 13px; line-height: 1.4; }
+.stat.good b { color: var(--ok); }
+
+/* filter chips */
+.filters { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { font: 500 13px var(--f-body); padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line);
+  background: var(--surface); color: var(--ink); cursor: pointer; }
+.chip:hover { border-color: var(--accent); }
+.chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+.chip:focus-visible, summary:focus-visible, .copy:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* criteria ledger */
+.req { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.req-head { padding: 16px 18px; display: grid; gap: 6px; border-bottom: 1px solid var(--line); }
+.req-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
+.req-id { font: 600 13px var(--f-mono); color: var(--accent); }
+.req-score { margin-left: auto; font: 500 13px var(--f-mono); color: var(--ok); }
+.brief { color: var(--muted); font-size: 14px; border-left: 2px solid var(--line); padding-left: 10px; max-width: 80ch; }
+details { border-top: 1px solid var(--line); }
+details:first-of-type { border-top: 0; }
+summary { list-style: none; cursor: pointer; display: grid; grid-template-columns: 52px 54px 1fr auto 14px; gap: 12px;
+  align-items: center; padding: 10px 18px; }
+summary::-webkit-details-marker { display: none; }
+summary:hover { background: var(--sunk); }
+.pill { font: 600 11px/1 var(--f-mono); letter-spacing: 0.06em; padding: 5px 0; text-align: center; border-radius: 4px;
+  background: var(--ok-soft); color: var(--ok); }
+.pill.fail { background: var(--conf-soft); color: var(--conf); }
+.cid { font: 500 13px var(--f-mono); color: var(--muted); }
+.cdesc { min-width: 0; }
+.code { font: 600 12px/1 var(--f-mono); padding: 5px 8px; border-radius: 4px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.c2xx { background: var(--ok-soft); color: var(--ok); }
+.c400 { background: var(--warn-soft); color: var(--warn); }
+.c403, .c404 { background: var(--info-soft); color: var(--info); }
+.c409 { background: var(--conf-soft); color: var(--conf); }
+.cmisc { background: var(--sunk); color: var(--muted); }
+.caret { width: 8px; height: 8px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted);
+  transform: rotate(-45deg); transition: transform .15s; }
+details[open] .caret { transform: rotate(45deg); }
+.evidence { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; padding: 4px 18px 18px; }
+.pane { min-width: 0; display: grid; gap: 6px; align-content: start; }
+.pane-label { font: 500 11px var(--f-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+pre { margin: 0; background: var(--code-bg); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px;
+  font: 12.5px/1.5 var(--f-mono); overflow: auto; max-height: 300px; white-space: pre; color: var(--ink); }
+.reqline { font: 500 12.5px var(--f-mono); color: var(--accent); word-break: break-all; }
+.note { font-size: 13px; color: var(--muted); padding: 4px 18px 18px; }
+
+/* race */
+.race { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 20px; display: grid; gap: 16px; }
+.lanes { display: grid; grid-template-columns: repeat(10, 1fr); gap: 6px; }
+.lane { aspect-ratio: 1.6; max-width: 100%; border-radius: 6px; display: grid; place-items: center; font: 600 12px var(--f-mono);
+  background: var(--conf-soft); color: var(--conf); }
+.lane.win { background: var(--ok); color: var(--bg); }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 20px; font-size: 13px; color: var(--muted); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+
+/* mechanisms */
+.mechs { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+.mech { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+.mech p { color: var(--muted); font-size: 14px; }
+.diagram { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; overflow-x: auto; }
+.diagram svg { display: block; width: 100%; min-width: 560px; height: auto; }
+.svg-node { fill: var(--sunk); stroke: var(--line); }
+.svg-node.main { fill: var(--accent-soft); stroke: var(--accent); }
+.svg-node.end { fill: var(--sunk); stroke: var(--muted); stroke-dasharray: 4 3; }
+.svg-t { fill: var(--ink); font: 600 14px var(--f-mono); }
+.svg-l { fill: var(--muted); font: 12px var(--f-body); }
+.svg-e { stroke: var(--muted); fill: none; stroke-width: 1.5; }
+.svg-e.hot { stroke: var(--accent); stroke-width: 2; }
+.arrowhead { fill: var(--muted); }
+.arrowhead.hot { fill: var(--accent); }
+
+/* layers */
+.layers { display: grid; gap: 6px; }
+.layer { display: grid; grid-template-columns: 130px 1fr; gap: 14px; align-items: center; background: var(--surface);
+  border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; }
+.layer b { font: 600 14px var(--f-mono); color: var(--accent); }
+.layer span { color: var(--muted); font-size: 14px; min-width: 0; }
+
+/* tables */
+.tbl { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font: 500 11px var(--f-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); background: var(--sunk); }
+tr:last-child td { border-bottom: 0; }
+td.k { font-family: var(--f-mono); font-size: 13px; color: var(--accent); white-space: nowrap; }
+.caught { color: var(--ok); font: 600 12px var(--f-mono); white-space: nowrap; }
+
+/* run */
+.cmds { display: grid; gap: 8px; }
+.cmd { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; background: var(--surface);
+  border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+.cmd > div { min-width: 0; display: grid; }
+.cmd code { overflow-x: auto; white-space: nowrap; min-width: 0; }
+.cmd small { display: block; color: var(--muted); font: 13px var(--f-body); margin-top: 2px; }
+.copy { font: 500 12px var(--f-body); padding: 6px 10px; border-radius: 6px; border: 1px solid var(--line);
+  background: var(--sunk); color: var(--ink); cursor: pointer; }
+footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); padding-top: 18px; }
+
+@media (max-width: 680px) {
+  summary { grid-template-columns: 46px 1fr auto 12px; }
+  summary .cid { display: none; }
+  .evidence { grid-template-columns: minmax(0, 1fr); }
+  .lanes { grid-template-columns: repeat(5, 1fr); }
+  .layer { grid-template-columns: 1fr; gap: 4px; }
+}
+@media (prefers-reduced-motion: reduce) { .caret { transition: none; } }
+</style>
+</head><body>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Hackathon BE1 · Appointment Management System</div>
+    <h1>Every acceptance criterion, verified against a live server</h1>
+    <p class="lede">A Spring Boot REST backend where providers publish time slots, customers search and book them, and cancellations release the slot in one transaction. Every request and response on this page was recorded from a real run of <code>acceptance-check.sh</code> against the server on PostgreSQL 16.</p>
+    <div class="meta"><span>Recorded 2026-11-21, Asia/Singapore time</span><span>Java 21 · Spring Boot 3.3</span><span>SQLite + PostgreSQL</span></div>
+    <div class="stats">
+      <div class="stat good"><b>56<small>/56</small></b><span>live HTTP checks pass on both databases</span></div>
+      <div class="stat good"><b>24<small>/24</small></b><span>integration tests pass on SQLite and PostgreSQL</span></div>
+      <div class="stat good"><b>1<small> of 20</small></b><span>simultaneous bookings of one slot succeed; 19 get 409</span></div>
+      <div class="stat good"><b>6<small>/6</small></b><span>safeguards proven: removing any one fails a test</span></div>
+      <div class="stat"><b>5</b><span>gaps found in the backtest and fixed</span></div>
+    </div>
+  </header>
+
+  <section id="criteria" aria-labelledby="h-criteria">
+    <div class="sec-head">
+      <div class="eyebrow">Acceptance criteria</div>
+      <h2 id="h-criteria">The brief, line by line</h2>
+      <p>Each criterion quotes the brief, then lists the checks that prove it. Open a row to see the exact request sent and the response the server returned.</p>
+    </div>
+    <div class="filters" role="group" aria-label="Filter by criterion" id="filters"></div>
+    <div id="ledger" style="display:grid;gap:16px"></div>
+  </section>
+
+  <section aria-labelledby="h-race">
+    <div class="sec-head">
+      <div class="eyebrow">The hard part</div>
+      <h2 id="h-race">20 customers, one slot, the same instant</h2>
+      <p>Check R3.12 registers 20 customers, then fires all 20 booking requests at one slot in parallel. On PostgreSQL with a 10-connection pool these really do race.</p>
+    </div>
+    <div class="race">
+      <div class="lanes" id="lanes" aria-label="Results of 20 parallel booking requests"></div>
+      <div class="legend"><span><i style="background:var(--ok)"></i>201 Created: the one booking that won</span><span><i style="background:var(--conf-soft);outline:1px solid var(--conf)"></i>409 Conflict: SLOT_ALREADY_BOOKED</span><span>Counts are from the recorded run; which tile won is illustrative.</span></div>
+    </div>
+    <div class="mechs">
+      <div class="mech">
+        <h3>1 · Atomic claim</h3>
+        <p>Booking is one conditional update. The database lets exactly one request see "1 row updated"; every other request sees 0 and gets 409. There is no gap between check and write.</p>
+        <pre>UPDATE time_slot
+   SET status = 'BOOKED'
+ WHERE id = :slotId
+   AND status = 'AVAILABLE'</pre>
+      </div>
+      <div class="mech">
+        <h3>2 · Database backstop</h3>
+        <p>Even if application code were wrong, the schema refuses a second active booking for the same slot. Cancelled rows stay for the audit trail.</p>
+        <pre>CREATE UNIQUE INDEX
+  ux_one_active_booking
+  ON appointment (slot_id)
+  WHERE status = 'BOOKED';</pre>
+      </div>
+      <div class="mech">
+        <h3>3 · All-or-nothing cancel</h3>
+        <p>The appointment update and the slot release share one transaction. If the release fails, the cancellation is rolled back. A test forces that failure to prove it.</p>
+        <pre>// one @Transactional method
+appt.cancel(reason, now);
+int n = releaseSlot(slotId);
+if (n == 0) throw conflict();
+// throwing rolls back both</pre>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-life">
+    <div class="sec-head">
+      <div class="eyebrow">Domain model</div>
+      <h2 id="h-life">Slot lifecycle</h2>
+      <p>Only AVAILABLE slots appear in search or can be booked. Every transition is a conditional update, so an illegal or racing transition changes nothing and returns 409.</p>
+    </div>
+    <div class="diagram">
+      <svg viewBox="0 0 720 260" role="img" aria-label="Slot states: AVAILABLE goes to BOOKED by booking and back by cancellation; AVAILABLE goes to LOCKED by lock and back by unlock; AVAILABLE or LOCKED become EXPIRED when the start time passes.">
+        <defs>
+          <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="arrowhead" d="M0,0 L10,5 L0,10 z"/></marker>
+          <marker id="arh" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="arrowhead hot" d="M0,0 L10,5 L0,10 z"/></marker>
+        </defs>
+        <text class="svg-l" x="250" y="30">create</text>
+        <path class="svg-e" d="M300 36 L300 72" marker-end="url(#ar)"/>
+        <rect class="svg-node main" x="230" y="76" width="140" height="44" rx="8"/>
+        <text class="svg-t" x="300" y="103" text-anchor="middle">AVAILABLE</text>
+        <rect class="svg-node" x="540" y="76" width="140" height="44" rx="8"/>
+        <text class="svg-t" x="610" y="103" text-anchor="middle">BOOKED</text>
+        <path class="svg-e hot" d="M372 90 L536 90" marker-end="url(#arh)"/>
+        <text class="svg-l" x="454" y="82" text-anchor="middle">book (atomic claim)</text>
+        <path class="svg-e hot" d="M538 108 L374 108" marker-end="url(#arh)"/>
+        <text class="svg-l" x="454" y="128" text-anchor="middle">cancel (same transaction)</text>
+        <rect class="svg-node" x="230" y="196" width="140" height="44" rx="8"/>
+        <text class="svg-t" x="300" y="223" text-anchor="middle">LOCKED</text>
+        <path class="svg-e" d="M286 122 L286 192" marker-end="url(#ar)"/>
+        <text class="svg-l" x="278" y="162" text-anchor="end">lock</text>
+        <path class="svg-e" d="M314 194 L314 124" marker-end="url(#ar)"/>
+        <text class="svg-l" x="322" y="162">unlock</text>
+        <rect class="svg-node end" x="20" y="136" width="140" height="44" rx="8"/>
+        <text class="svg-t" x="90" y="163" text-anchor="middle">EXPIRED</text>
+        <path class="svg-e" d="M228 104 L120 104 L120 132" marker-end="url(#ar)"/>
+        <path class="svg-e" d="M228 218 L60 218 L60 184" marker-end="url(#ar)"/>
+        <text class="svg-l" x="90" y="202" text-anchor="middle">start time passes</text>
+      </svg>
+    </div>
+    <div class="layers" aria-label="Application layers">
+      <div class="layer"><b>web</b><span>4 controllers, validated request records, paging parameters. No business logic.</span></div>
+      <div class="layer"><b>service</b><span>Business rules and transaction boundaries. An injected clock makes time-based rules testable.</span></div>
+      <div class="layer"><b>repository</b><span>Spring Data JPA, criteria-based search, the atomic conditional updates, row locks.</span></div>
+      <div class="layer"><b>database</b><span>Explicit SQL schema with CHECK constraints, foreign keys, search indexes and the one-active-booking index.</span></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-back">
+    <div class="sec-head">
+      <div class="eyebrow">Backtest</div>
+      <h2 id="h-back">Gaps found and fixed</h2>
+      <p>Before the review, each line of the brief was turned into testable statements. Five gaps turned up. Each one now has code and a test.</p>
+    </div>
+    <div class="tbl"><table>
+      <thead><tr><th>Brief says</th><th>Gap found</th><th>Fix</th></tr></thead>
+      <tbody>
+        <tr><td>"define and <b>manage</b> their time slots"</td><td>Only create, lock and unlock existed</td><td>Reschedule (PUT) and delete (DELETE) for slots never booked; slots with history must be locked instead</td></tr>
+        <tr><td>"400 for invalid time ranges"</td><td>Booking with end before start returned 404</td><td>Now 400 <code>INVALID_TIME_RANGE</code></td></tr>
+        <tr><td>"within an atomic transaction"</td><td>Atomic in code, but not proven</td><td>Test breaks the slot release mid-cancel and checks nothing was saved</td></tr>
+        <tr><td>"robust consideration"</td><td>One customer firing two overlapping bookings at once could get both on PostgreSQL</td><td>Customer row locked during booking; race test added</td></tr>
+        <tr><td>"validate slot non-overlap"</td><td>No test for simultaneous overlapping creates</td><td>10 overlapping creates at once: exactly 1 slot saved</td></tr>
+      </tbody>
+    </table></div>
+    <div class="sec-head" style="margin-top:12px">
+      <h3>Safeguards proven by removal</h3>
+      <p>Each safeguard was deleted on purpose and the suite re-run on PostgreSQL. A test that still passes without its safeguard proves nothing; all six failed as they should.</p>
+    </div>
+    <div class="tbl"><table>
+      <thead><tr><th>Safeguard removed</th><th>Test that caught it</th><th>Result</th></tr></thead>
+      <tbody>
+        <tr><td>Atomic claim on booking</td><td class="k">concurrentBookingsOfOneSlot…</td><td class="caught">CAUGHT</td></tr>
+        <tr><td>Customer row lock</td><td class="k">sameCustomerRacingForOverlapping…</td><td class="caught">CAUGHT</td></tr>
+        <tr><td>Provider row lock on slot creation</td><td class="k">concurrentOverlappingSlotCreation…</td><td class="caught">CAUGHT</td></tr>
+        <tr><td>Rollback when slot release fails</td><td class="k">cancellationIsAtomicAndRollsBack…</td><td class="caught">CAUGHT</td></tr>
+        <tr><td>"Not yet started" filter in search</td><td class="k">excludesBookedLockedAndExpired…</td><td class="caught">CAUGHT</td></tr>
+        <tr><td>Overlap check on slot creation</td><td class="k">overlappingSlotRejected…</td><td class="caught">CAUGHT</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section aria-labelledby="h-run">
+    <div class="sec-head">
+      <div class="eyebrow">Reproduce</div>
+      <h2 id="h-run">Run it yourself</h2>
+      <p>Needs Java 21 and Maven. The check script needs only bash and curl.</p>
+    </div>
+    <div class="cmds">
+      <div class="cmd"><div><code>mvn spring-boot:run</code><small>Starts on port 8080 with demo data. Swagger UI at /swagger-ui.html</small></div><button class="copy" type="button">Copy</button></div>
+      <div class="cmd"><div><code>./acceptance-check.sh</code><small>56 PASS/FAIL checks, grouped R1 to R5, against the running server</small></div><button class="copy" type="button">Copy</button></div>
+      <div class="cmd"><div><code>mvn test -Dtest.profiles=test,postgres,pgtest</code><small>The 24 integration tests on PostgreSQL (plain <code>mvn test</code> uses SQLite)</small></div><button class="copy" type="button">Copy</button></div>
+    </div>
+  </section>
+
+  <footer>Known limitations: no login (the customer ID is sent in the request); searching with an unknown provider ID returns an empty page rather than 404; booking by time range needs an exact slot match. Full details are in docs/BACKTEST_REPORT.md and docs/DESIGN.md in the repository.</footer>
+</div>
+
+<script id="data" type="application/json">[{"id":"S.1","desc":"Register provider","want":"201","got":"201","ok":true,"call":{"method":"POST","path":"/providers","req":"{\n  \"name\": \"Acceptance Legal\",\n  \"serviceCategory\": \"ACC_150306626\"\n}","code":"201","res":"{\n  \"id\": 4,\n  \"name\": \"Acceptance Legal\",\n  \"serviceCategory\": \"ACC_150306626\",\n  \"createdAt\": \"2026-11-21T10:41:37.670128916\"\n}"}},{"id":"S.2","desc":"Register second provider (other category)","want":"201","got":"201","ok":true,"call":{"method":"POST","path":"/providers","req":"{\n  \"name\": \"Acceptance Tax\",\n  \"serviceCategory\": \"ACC_150306626_TAX\"\n}","code":"201","res":"{\n  \"id\": 5,\n  \"name\": \"Acceptance Tax\",\n  \"serviceCategory\": \"ACC_150306626_TAX\",\n  \"createdAt\": \"2026-11-21T10:41:37.70578955\"\n}"}},{"id":"S.3","desc":"Register customer 1","want":"201","got":"201","ok":true,"call":{"method":"POST","path":"/customers","req":"{\n  \"name\": \"Ann\",\n  \"email\": \"ann.ACC_150306626@example.com\"\n}","code":"201","res":"{\n  \"id\": 3,\n  \"name\": \"Ann\",\n  \"email\": \"ann.acc_150306626@example.com\",\n  \"createdAt\": \"2026-11-21T10:41:37.747105152\"\n}"}},{"id":"S.4","desc":"Register customer 2","want":"201","got":"201","ok":true,"call":{"method":"POST","path":"/customers","req":"{\n  \"name\": \"Ben\",\n  \"email\": \"ben.ACC_150306626@example.com\"\n}","code":"201","res":"{\n  \"id\": 4,\n  \"name\": \"Ben\",\n  \"email\": \"ben.acc_150306626@example.com\",\n  \"createdAt\": \"2026-11-21T10:41:37.772045666\"\n}"}},{"id":"R1.1","desc":"Create slot (provider, date, start, end) -> AVAILABLE","want":"201","got":"201","ok":true,"call":{"method":"POST","path":"/providers/4/slots","req":"{\n  \"date\": \"2026-12-31\",\n  \"startTime\": \"09:00\",\n  \"endTime\": \"10:00\"\n}","code":"201","res":"{\n  \"id\": 46,\n  \"providerId\": 4,\n  \"providerName\": \"Acceptance Legal\",\n  \"serviceCategory\": \"ACC_150306626\",\n  \"date\": \"2026-12-31\",\n  \"startTime\": \"09:00\",\n  \"endTime\": \"10:00\",\n  \"status\": \"AVAILABLE\"\n}"}},{"id":"R1.2","desc":"Slot is persisted and retrievable","want":"200","got":"200","ok":true,"call":{"method":"GET","path":"/providers/4/slots/46","req":"","code":"200","res":"{\n  \"id\": 46,\n  \"providerId\": 4,\n  \"providerName\": \"Acceptance Legal\",\n  \"serviceCategory\": \"ACC_150306626\",\n  \"date\": \"2026-12-31\",\n  \"startTime\": \"09:00\",\n  \"endTime\": \"10:00\",\n  \"status\": \"AVAILABLE\"\n}"}},{"id":"R1.3","desc":"Partially overlapping slot rejected","want":"409","got":"409","ok":true,"call":{"method":"POST","path":"/providers/4/slots","req":"{\n  \"date\": \"2026-12-31\",\n  \"startTime\": \"09:30\",\n  \"endTime\": \"10:30\"\n}","code":"409","res":"{\n  \"timestamp\": \"2026-11-21T10:41:37.891663259+08:00\",\n  \"status\": 409,\n  \"error\": \"Conflict\",\n  \"code\": \"SLOT_OVERLAP\",\n  \"message\": \"Slot 2026-12-31T09:30-10:30 overlaps existing slot(s) for provider 4: #46 2026-12-31T09:00-10:00 (AVAILABLE)\",\n  \"path\": \"/api/v1/providers/4/slots\"\n}"}},{"id":"R1.4","desc":"Enclosing slot rejected","want":"409","got":"409","ok":true,"call":{"method":"POST","path":"/providers/4/slots","req":"{\n  \"date\": \"2026-12-31\",\n  \"startTime\": \"08:00\",\n  \"endTime\": \"12:00\"\n}","code":"409","res":"{\n  \"timestamp\": \"2026-11-21T10:41:37.919202946+08:00\",\n  \"status\": 409,\n  \"error\": \"Conflict\",\n  \"code\": \"SLOT_OVERLAP\",\n  \"message\": \"Slot 2026-12-31T08:00-12:00 overlaps existing slot(s) for provider 4: #46 2026-12-31T09:00-10:00 (AVAILABLE)\",\n  \"path\": \"/api/v1/providers/4/slots\"\n}"}},{"id":"R1.5","desc":"Back-to-back slot allowed","want":"201","got":"201","ok":true,"call":{"method":"POST","path":"/providers/4/slots","req":"{\n  \"date\": \"2026-12-31\",\n  \"startTime\": \"10:00\",\n  \"endTime\": \"11:00\"\n}","code":"201","res":"{\n  \"id\": 47,\n  \"providerId\": 4,\n  \"providerName\": \"Acceptance Legal\",\n  \"serviceCategory\": \"ACC_150306626\",\n  \"date\": \"2026-12-31\",\n  \"startTime\": \"10:00\",\n  \"endTime\": \"11:00\",\n  \"status\": \"AVAILABLE\"\n}"}},{"id":"R1.6","desc":"Same time, different provider allowed","want":"201","got":"201","ok":true,"call":{"method":"POST","path":"/providers/5/slots","req":"{\n  \"date\": \"2026-12-31\",\n  \"startTime\": \"09:00\",\n  \"endTime\": \"10:00\"\n}","code":"201","res":"{\n  \"id\": 48,\n  \"providerId\": 5,\n  \"providerName\": \"Acceptance Tax\",\n  \"serviceCategory\": \"ACC_150306626_TAX\",\n  \"date\": \"2026-12-31\",\n  \"startTime\": \"09:00\",\n  \"endTime\": \"10:00\",\n  \"status\": \"AVAILABLE\"\n}"}},{"id":"R1.7","desc":"End before start -> 400","want":"400","got":"400","ok":true,"call":{"method":"POST","path":"/providers/4/slots","req":"{\n  \"date\": \"2026-12-31\",\n  \"startTime\": \"12:00\",\n  \"endTime\": \"11:00\"\n}","code":"400","res":"{\n  \"timestamp\": \"2026-11-21T10:41:37.991936189+08:00\",\n  \"status\": 400,\n  \"error\": \"Bad Request\",\n  \"code\": \"INVALID_TIME_RANGE\",\n  \"message\": \"endTime (11:00) must be after startTime (12:00)\",\n  \"path\": \"/api/v1/providers/4/slots\"\n}"}},{"id":"R1.8","desc":"Slot in the past -> 400","want":"400","got":"400","ok":true,"call":{"method":"POST","path":"/providers/4/slots","req":"{\n  \"date\": \"2020-01-01\",\n  \"startTime\": \"09:00\",\n  \"endTime\": \"10:00\"\n}","code":"400","res":"{\n  \"timestamp\": \"2026-11-21T10:41:38.008238156+08:00\",\n  \"status\": 400,\n  \"error\": \"Bad Request\",\n  \"code\": \"INVALID_TIME_RANGE\",\n  \"message\": \"Slot start 2020-01-01T09:00 is in the past\",\n  \"path\": \"/api/v1/providers/4/slots\"\n}"}},{"id":"R1.9","desc":"Unknown provider -> 404","want":"404","got":"404","ok":true,"call":{"method":"POST","path":"/providers/999999/slots","req":"{\n  \"date\": \"2026-12-31\",\n  \"startTime\": \"09:00\",\n  \"endTime\": \"10:00\"\n}","code":"404","res":"{\n  \"timestamp\": \"2026-11-21T10:41:38.030069698+08:00\",\n  \"status\": 404,\n  \"error\": \"Not Found\",\n  \"code\": \"PROVIDER_NOT_FOUND\",\n  \"message\": \"Provider 999999 not found\",\n  \"path\": \"/api/v1/providers/999999/slots\"\n}"}},{"id":"R1.10","desc":"Batch with internal overlap rejected (all-or-nothing)","want":"409","got":"409","ok":true,"call":{"method":"POST","path":"/providers/4/slots/batch","req":"{\n  \"slots\": [\n    {\n      \"date\": \"2026-12-31\",\n      \"startTime\": \"13:00\",\n      \"endTime\": \"14:00\"\n    },\n    {\n      \"date\": \"2026-12-31\",\n      \"startTime\": \"13:30\",\n      \"endTime\": \"14:30\"\n    }\n  ]\n}","code":"409","res":"{\n  \"timestamp\": \"2026-11-21T10:41:38.066853235+08:00\",\n  \"status\": 409,\n  \"error\": \"Conflict\",\n  \"code\": \"SLOT_OVERLAP\",\n  \"message\": \"Slots in the request overlap each other: 2026-12-31T13:00-14:00 and 2026-12-31T13:30-14:30\",\n  \"path\": \"/api/v1/providers/4/slots/batch\"\n}"}},{"id":"R1.11","desc":"Batch create","want":"201","got":"201","ok":true,"call":{"method":"POST","path":"/providers/4/slots/batch","req":"{\n  \"slots\": [\n    {\n      \"date\": \"2026-12-31\",\n      \"startTime\": \"13:00\",\n      \"endTime\": \"14:00\"\n    },\n    {\n      \"date\": \"2026-12-31\",\n      \"startTime\": \"14:00\",\n      \"endTime\": \"15:00\"\n    },\n    {\n      \"date\": \"2027-01-01\",\n      \"startTime\": \"09:00\",\n      \"endTime\": \"10:00\"\n    }\n  ]\n}","code":"201","res":"[\n  {\n    \"id\": 49,\n    \"providerId\": 4,\n    \"providerName\": \"Acceptance Legal\",\n    \"serviceCategory\": \"ACC_150306626\",\n    \"date\": \"2026-12-31\",\n    \"startTime\": \"13:00\",\n    \"endTime\": \"14:00\",\n    \"status\": \"AVAILABLE\"\n  },\n  {\n    \"id\": 50,\n    \"providerId\": 4,\n    \"providerName\": \"Acceptance Legal\",\n    \"serviceCategory\": \"ACC_150306626\",\n    \"date\": \"2026-12-31\",\n    \"startTime\": \"14:00\",\n    \"endTime\": \"15:00\",\n    \"status\": \"AVAILABLE\"\n  },\n  {\n    \"id\": 51,\n    \"providerId\": 4,\n    \"providerName\": \"Acceptance Legal\",\n    \"serviceCategory\": \"ACC_150306626\",\n    \"date\": \"2027-01-01\",\n    \"startTime\": \"09:00\",\n    \"endTime\": \"10:00\",\n    \"status\": \"AVAILABLE\"\n  }\n]"}},{"id":"R1.12","desc":"Reschedule unbooked slot","want":"200","got":"200","ok":true,"call":{"method":"PUT","path":"/providers/4/slots/47","req":"{\n  \"date\": \"2026-12-31\",\n  \"startTime\": \"10:15\",\n  \"endTime\": \"11:15\"\n}","code":"200","res":"{\n  \"id\": 47,\n  \"providerId\": 4,\n  \"providerName\": \"Acceptance Legal\",\n  \"serviceCategory\": \"ACC_150306626\",\n  \"date\": \"2026-12-31\",\n  \"startTime\": \"10:15\",\n  \"endTime\": \"11:15\",\n  \"status\": \"AVAILABLE\"\n}"}},{"id":"R1.13","desc":"Reschedule onto another slot rejected","want":"409","got":"409","ok":true,"call":{"method":"PUT","path":"/providers/4/slots/47","req":"{\n  \"date\": \"2026-12-31\",\n  \"startTime\": \"09:30\",\n  \"endTime\": \"10:30\"\n}","code":"409","res":"{\n  \"timestamp\": \"2026-11-21T10:41:38.171192196+08:00\",\n  \"status\": 409,\n  \"error\": \"Conflict\",\n  \"code\": \"SLOT_OVERLAP\",\n  \"message\": \"Slot 2026-12-31T09:30-10:30 overlaps existing slot(s) for provider 4: #46\",\n  \"path\": \"/api/v1/providers/4/slots/47\"\n}"}},{"id":"R1.14","desc":"Lock slot","want":"200","got":"200","ok":true,"call":{"method":"POST","path":"/providers/4/slots/52/lock","req":"","code":"200","res":"{\n  \"id\": 52,\n  \"providerId\": 4,\n  \"providerName\": \"Acceptance Legal\",\n  \"serviceCategory\": \"ACC_150306626\",\n  \"date\": \"2026-12-31\",\n  \"startTime\": \"16:00\",\n  \"endTime\": \"17:00\",\n  \"status\": \"LOCKED\"\n}"}},{"id":"R1.15","desc":"Delete unbooked slot","want":"204","got":"204","ok":true,"call":{"method":"DELETE","path":"/providers/4/slots/53","req":"","code":"204","res":""}},{"id":"R2.1","desc":"Filter by service category","want":"200","got":"200","ok":true,"call":{"method":"GET","path":"/slots/available?serviceCategory=ACC_150306626","req":"","code":"200","res":"{\n  \"content\": [\n    {\n      \"id\": 46,\n      \"providerId\": 4,\n      \"providerName\": \"Acceptance Legal\",\n      \"serviceCategory\": \"ACC_150306626\",\n      \"date\": \"2026-12-31\",\n      \"startTime\": \"09:00\",\n      \"endTime\": \"10:00\",\n      \"status\": \"AVAILABLE\"\n    },\n    {\n      \"id\": 47,\n      \"providerId\": 4,\n      \"providerName\": \"Acceptance Legal\",\n      \"serviceCategory\": \"ACC_150306626\",\n      \"date\": \"2026-12-31\",\n      \"startTime\": \"10:15\",\n      \"endTime\": \"11:15\",\n      \"status\": \"AVAILABLE\"\n    },\n    {\n      \"id\": 49,\n      \"providerId\": 4,\n      \"providerName\": \"Acceptance Legal\",\n      \"serviceCategory\": \"ACC_150306626\",\n      \"date\": \"2026-12-31\",\n      \"startTime\": \"13:00\",\n      \"endTime\": \"14:00\",\n      \"status\": \"AVAILABLE\"\n    },\n    {\n      \"id\": 50,\n      \"providerId\": 4,\n      \"providerName\": \"Acceptance Legal\",\n      \"serviceCategory\": \"ACC_150306626\",\n      \"date\": \"2026-12-31\",\n      \"startTime\": \"14:00\",\n      \"endTime\": \"15:00\",\n      \"status\": \"AVAILABLE\"\n    },\n    {\n      \"id\": 51,\n      \"providerId\": 4,\n      \"providerName\": \"Acceptance Legal\",\n      \"serviceCategory\": \"ACC_150306626\",\n      \"date\": \"2027-01-01\",\n      \"startTime\": \"09:00\",\n      \"endTime\": \"10:00\",\n      \"status\": \"AVAILABLE\"\n    }\n  ],\n  \"page\": 0,\n  \"size\": 20,\n  \"totalElements\": 5,\n  \"totalPages\": 1,\n  \"first\": true,\n  \"last\": true,\n  \"sort\": \"startTime: ASC,id: ASC\"\n}"}},{"id":"R2.2","desc":"Filter by provider ID","want":"200","got":"200","ok":true,"call":{"method":"GET","path":"/slots/available?providerId=5","req":"","code":"200","res":"{\n  \"content\": [\n    {\n      \"id\": 48,\n      \"providerId\": 5,\n      \"providerName\": \"Acceptance Tax\",\n      \"serviceCategory\": \"ACC_150306626_TAX\",\n      \"date\": \"2026-12-31\",\n      \"startTime\": \"09:00\",\n      \"endTime\": \"10:00\",\n      \"status\": \"AVAILABLE\"\n    }\n  ],\n  \"page\": 0,\n  \"size\": 20,\n  \"totalElements\": 1,\n  \"totalPages\": 1,\n  \"first\": true,\n  \"last\": true,\n  \"sort\": \"startTime: ASC,id: ASC\"\n}"}},{"id":"R2.3","desc":"Filter by date range","want":"200","got":"200","ok":true,"call":{"method":"GET","path":"/slots/available?serviceCategory=ACC_150306626&fromDate=2027-01-01&toDate=2027-01-01","req":"","code":"200","res":"{\n  \"content\": [\n    {\n      \"id\": 51,\n      \"providerId\": 4,\n      \"providerName\": \"Acceptance Legal\",\n      \"serviceCategory\": \"ACC_150306626\",\n      \"date\": \"2027-01-01\",\n      \"startTime\": \"09:00\",\n      \"endTime\": \"10:00\",\n      \"status\": \"AVAILABLE\"\n    }\n  ],\n  \"page\": 0,\n  \"size\": 20,\n  \"totalElements\": 1,\n  \"totalPages\": 1,\n  \"first\": true,\n  \"last\": true,\n  \"sort\": \"startTime: ASC,id: ASC\"\n}"}},{"id":"R2.4","desc":"Paginated (page 1, size 2 of 5)","want":"200","got":"200","ok":true,"call":{"method":"GET","path":"/slots/available?serviceCategory=ACC_150306626&size=2&page=1","req":"","code":"200","res":"{\n  \"content\": [\n    {\n      \"id\": 49,\n      \"providerId\": 4,\n      \"providerName\": \"Acceptance Legal\",\n      \"serviceCategory\": \"ACC_150306626\",\n      \"date\": \"2026-12-31\",\n      \"startTime\": \"13:00\",\n      \"endTime\": \"14:00\",\n      \"status\": \"AVAILABLE\"\n    },\n    {\n      \"id\": 50,\n      \"providerId\": 4,\n      \"providerName\": \"Acceptance Legal\",\n      \"serviceCategory\": \"ACC_150306626\",\n      \"date\": \"2026-12-31\",\n      \"startTime\": \"14:00\",\n      \"endTime\": \"15:00\",\n      \"status\": \"AVAILABLE\"\n    }\n  ],\n  \"page\": 1,\n  \"size\": 2,\n  \"totalElements\": 5,\n  \"totalPages\": 3,\n  \"first\": false,\n  \"last\": false,\n  \"sort\": \"startTime: ASC,id: ASC\"\n}"}},{"id":"R2.5","desc":"Sorted (startTime desc -> latest first)","want":"200","got":"200","ok":true,"call":{"method":"GET","path":"/slots/available?serviceCategory=ACC_150306626&sort=startTime,desc&size=1","req":"","code":"200","res":"{\n  \"content\": [\n    {\n      \"id\": 51,\n      \"providerId\": 4,\n      \"providerName\": \"Acceptance Legal\",\n      \"serviceCategory\": \"ACC_150306626\",\n      \"date\": \"2027-01-01\",\n      \"startTime\": \"09:00\",\n      \"endTime\": \"10:00\",\n      \"status\": \"AVAILABLE\"\n    }\n  ],\n  \"page\": 0,\n  \"size\": 1,\n  \"totalElements\": 5,\n  \"totalPages\": 5,\n  \"first\": true,\n  \"last\": false,\n  \"sort\": \"startTime: DESC,id: ASC\"\n}"}},{"id":"R2.6","desc":"LOCKED slot excluded from search","want":"200","got":"200","ok":true,"call":{"method":"GET","path":"/slots/available?serviceCategory=ACC_150306626&size=100","req":"","code":"200","res":"{\n  \"content\": [\n    {\n      \"id\": 46,\n      \"providerId\": 4,\n      \"providerName\": \"Acceptance Legal\",\n      \"serviceCategory\": \"ACC_150306626\",\n      \"date\": \"2026-12-31\",\n      \"startTime\": \"09:00\",\n      \"endTime\": \"10:00\",\n      \"status\": \"AVAILABLE\"\n    },\n    {\n      \"id\": 47,\n      \"providerId\": 4,\n      \"providerName\": \"Acceptance Legal\",\n      \"serviceCategory\": \"ACC_150306626\",\n      \"date\": \"2026-12-31\",\n      \"startTime\": \"10:15\",\n      \"endTime\": \"11:15\",\n      \"status\": \"AVAILABLE\"\n    },\n    {\n      \"id\": 49,\n      \"providerId\": 4,\n      \"providerName\": \"Acceptance Legal\",\n      \"serviceCategory\": \"ACC_150306626\",\n      \"date\": \"2026-12-31\",\n      \"startTime\": \"13:00\",\n      \"endTime\": \"14:00\",\n      \"status\": \"AVAILABLE\"\n    },\n    {\n      \"id\": 50,\n      \"providerId\": 4,\n      \"providerName\": \"Acceptance Legal\",\n      \"serviceCategory\": \"ACC_150306626\",\n      \"date\": \"2026-12-31\",\n      \"startTime\": \"14:00\",\n      \"endTime\": \"15:00\",\n      \"status\": \"AVAILABLE\"\n    },\n    {\n      \"id\": 51,\n      \"providerId\": 4,\n      \"providerName\": \"Acceptance Legal\",\n      \"serviceCategory\": \"ACC_150306626\",\n      \"date\": \"2027-01-01\",\n      \"startTime\": \"09:00\",\n      \"endTime\": \"10:00\",\n      \"status\": \"AVAILABLE\"\n    }\n  ],\n  \"page\": 0,\n  \"size\": 100,\n  \"totalElements\": 5,\n  \"totalPages\": 1,\n  \"first\": true,\n  \"last\": true,\n  \"sort\": \"startTime: ASC,id: ASC\"\n}"}},{"id":"R2.7","desc":"Non-whitelisted sort field -> 400","want":"400","got":"400","ok":true,"call":{"method":"GET","path":"/slots/available?sort=password","req":"","code":"400","res":"{\n  \"timestamp\": \"2026-11-21T10:41:38.485974987+08:00\",\n  \"status\": 400,\n  \"error\": \"Bad Request\",\n  \"code\": \"INVALID_REQUEST\",\n  \"message\": \"Cannot sort by 'password'. Allowed: [id, serviceCategory, startTime, providerName, endTime]\",\n  \"path\": \"/api/v1/slots/available\"\n}"}},{"id":"R2.8","desc":"fromDate after toDate -> 400","want":"400","got":"400","ok":true,"call":{"method":"GET","path":"/slots/available?fromDate=2027-01-01&toDate=2026-12-31","req":"","code":"400","res":"{\n  \"timestamp\": \"2026-11-21T10:41:38.500561735+08:00\",\n  \"status\": 400,\n  \"error\": \"Bad Request\",\n  \"code\": \"INVALID_TIME_RANGE\",\n  \"message\": \"fromDate must be on or before toDate\",\n  \"path\": \"/api/v1/slots/available\"\n}"}},{"id":"R3.1","desc":"Book by slot ID","want":"201","got":"201","ok":true,"call":{"method":"POST","path":"/appointments","req":"{\n  \"customerId\": 3,\n  \"slotId\": 46,\n  \"notes\": \"acceptance\"\n}","code":"201","res":"{\n  \"id\": 1,\n  \"customerId\": 3,\n  \"status\": \"BOOKED\",\n  \"slot\": {\n    \"id\": 46,\n    \"providerId\": 4,\n    \"providerName\": \"Acceptance Legal\",\n    \"serviceCategory\": \"ACC_150306626\",\n    \"date\": \"2026-12-31\",\n    \"startTime\": \"09:00\",\n    \"endTime\": \"10:00\",\n    \"status\": \"BOOKED\"\n  },\n  \"notes\": \"acceptance\",\n  \"bookedAt\": \"2026-11-21T10:41:38.542123992\",\n  \"cancelledAt\": null,\n  \"cancellationReason\": null\n}"}},{"id":"R3.2","desc":"Double booking same slot -> 409 with clear message","want":"409","got":"409","ok":true,"call":{"method":"POST","path":"/appointments","req":"{\n  \"customerId\": 4,\n  \"slotId\": 46\n}","code":"409","res":"{\n  \"timestamp\": \"2026-11-21T10:41:38.597195857+08:00\",\n  \"status\": 409,\n  \"error\": \"Conflict\",\n  \"code\": \"SLOT_ALREADY_BOOKED\",\n  \"message\": \"Slot 46 is not available (status: BOOKED)\",\n  \"path\": \"/api/v1/appointments\"\n}"}},{"id":"R3.3","desc":"BOOKED slot now excluded from search","want":"200","got":"200","ok":true,"call":{"method":"GET","path":"/slots/available?serviceCategory=ACC_150306626&size=100","req":"","code":"200","res":"{\n  \"content\": [\n    {\n      \"id\": 47,\n      \"providerId\": 4,\n      \"providerName\": \"Acceptance Legal\",\n      \"serviceCategory\": \"ACC_150306626\",\n      \"date\": \"2026-12-31\",\n      \"startTime\": \"10:15\",\n      \"endTime\": \"11:15\",\n      \"status\": \"AVAILABLE\"\n    },\n    {\n      \"id\": 49,\n      \"providerId\": 4,\n      \"providerName\": \"Acceptance Legal\",\n      \"serviceCategory\": \"ACC_150306626\",\n      \"date\": \"2026-12-31\",\n      \"startTime\": \"13:00\",\n      \"endTime\": \"14:00\",\n      \"status\": \"AVAILABLE\"\n    },\n    {\n      \"id\": 50,\n      \"providerId\": 4,\n      \"providerName\": \"Acceptance Legal\",\n      \"serviceCategory\": \"ACC_150306626\",\n      \"date\": \"2026-12-31\",\n      \"startTime\": \"14:00\",\n      \"endTime\": \"15:00\",\n      \"status\": \"AVAILABLE\"\n    },\n    {\n      \"id\": 51,\n      \"providerId\": 4,\n      \"providerName\": \"Acceptance Legal\",\n      \"serviceCategory\": \"ACC_150306626\",\n      \"date\": \"2027-01-01\",\n      \"startTime\": \"09:00\",\n      \"endTime\": \"10:00\",\n      \"status\": \"AVAILABLE\"\n    }\n  ],\n  \"page\": 0,\n  \"size\": 100,\n  \"totalElements\": 4,\n  \"totalPages\": 1,\n  \"first\": true,\n  \"last\": true,\n  \"sort\": \"startTime: ASC,id: ASC\"\n}"}},{"id":"R3.4","desc":"Book by time range (provider + date + start + end)","want":"201","got":"201","ok":true,"call":{"method":"POST","path":"/appointments","req":"{\n  \"customerId\": 4,\n  \"providerId\": 4,\n  \"date\": \"2026-12-31\",\n  \"startTime\": \"10:15\",\n  \"endTime\": \"11:15\"\n}","code":"201","res":"{\n  \"id\": 2,\n  \"customerId\": 4,\n  \"status\": \"BOOKED\",\n  \"slot\": {\n    \"id\": 47,\n    \"providerId\": 4,\n    \"providerName\": \"Acceptance Legal\",\n    \"serviceCategory\": \"ACC_150306626\",\n    \"date\": \"2026-12-31\",\n    \"startTime\": \"10:15\",\n    \"endTime\": \"11:15\",\n    \"status\": \"BOOKED\"\n  },\n  \"notes\": null,\n  \"bookedAt\": \"2026-11-21T10:41:38.631373536\",\n  \"cancelledAt\": null,\n  \"cancellationReason\": null\n}"}},{"id":"R3.5","desc":"Booking with invalid time range -> 400","want":"400","got":"400","ok":true,"call":{"method":"POST","path":"/appointments","req":"{\n  \"customerId\": 3,\n  \"providerId\": 4,\n  \"date\": \"2026-12-31\",\n  \"startTime\": \"11:00\",\n  \"endTime\": \"10:00\"\n}","code":"400","res":"{\n  \"timestamp\": \"2026-11-21T10:41:38.666540169+08:00\",\n  \"status\": 400,\n  \"error\": \"Bad Request\",\n  \"code\": \"INVALID_TIME_RANGE\",\n  \"message\": \"endTime (10:00) must be after startTime (11:00)\",\n  \"path\": \"/api/v1/appointments\"\n}"}},{"id":"R3.6","desc":"Time range matching no slot -> 404","want":"404","got":"404","ok":true,"call":{"method":"POST","path":"/appointments","req":"{\n  \"customerId\": 3,\n  \"providerId\": 4,\n  \"date\": \"2026-12-31\",\n  \"startTime\": \"19:00\",\n  \"endTime\": \"20:00\"\n}","code":"404","res":"{\n  \"timestamp\": \"2026-11-21T10:41:38.691465956+08:00\",\n  \"status\": 404,\n  \"error\": \"Not Found\",\n  \"code\": \"SLOT_NOT_FOUND\",\n  \"message\": \"Provider 4 has no slot 2026-12-31T19:00-20:00\",\n  \"path\": \"/api/v1/appointments\"\n}"}},{"id":"R3.7","desc":"Non-existent slot -> 404","want":"404","got":"404","ok":true,"call":{"method":"POST","path":"/appointments","req":"{\n  \"customerId\": 3,\n  \"slotId\": 999999\n}","code":"404","res":"{\n  \"timestamp\": \"2026-11-21T10:41:38.708651255+08:00\",\n  \"status\": 404,\n  \"error\": \"Not Found\",\n  \"code\": \"SLOT_NOT_FOUND\",\n  \"message\": \"Slot 999999 not found\",\n  \"path\": \"/api/v1/appointments\"\n}"}},{"id":"R3.8","desc":"Non-existent customer -> 404","want":"404","got":"404","ok":true,"call":{"method":"POST","path":"/appointments","req":"{\n  \"customerId\": 999999,\n  \"slotId\": 48\n}","code":"404","res":"{\n  \"timestamp\": \"2026-11-21T10:41:38.726559716+08:00\",\n  \"status\": 404,\n  \"error\": \"Not Found\",\n  \"code\": \"CUSTOMER_NOT_FOUND\",\n  \"message\": \"Customer 999999 not found\",\n  \"path\": \"/api/v1/appointments\"\n}"}},{"id":"R3.9","desc":"LOCKED slot cannot be booked -> 409","want":"409","got":"409","ok":true,"call":{"method":"POST","path":"/appointments","req":"{\n  \"customerId\": 3,\n  \"slotId\": 52\n}","code":"409","res":"{\n  \"timestamp\": \"2026-11-21T10:41:38.74715887+08:00\",\n  \"status\": 409,\n  \"error\": \"Conflict\",\n  \"code\": \"SLOT_NOT_AVAILABLE\",\n  \"message\": \"Slot 52 is not available (status: LOCKED)\",\n  \"path\": \"/api/v1/appointments\"\n}"}},{"id":"R3.10","desc":"Customer overlapping own booking -> 409","want":"409","got":"409","ok":true,"call":{"method":"POST","path":"/appointments","req":"{\n  \"customerId\": 3,\n  \"slotId\": 48\n}","code":"409","res":"{\n  \"timestamp\": \"2026-11-21T10:41:38.766964746+08:00\",\n  \"status\": 409,\n  \"error\": \"Conflict\",\n  \"code\": \"CUSTOMER_DOUBLE_BOOKING\",\n  \"message\": \"Customer 3 already has a booking that overlaps 2026-12-31T09:00-10:00\",\n  \"path\": \"/api/v1/appointments\"\n}"}},{"id":"R3.11","desc":"Missing customerId -> 400 with field error","want":"400","got":"400","ok":true,"call":{"method":"POST","path":"/appointments","req":"{\n  \"slotId\": 48\n}","code":"400","res":"{\n  \"timestamp\": \"2026-11-21T10:41:38.794698535+08:00\",\n  \"status\": 400,\n  \"error\": \"Bad Request\",\n  \"code\": \"VALIDATION_FAILED\",\n  \"message\": \"Request validation failed\",\n  \"path\": \"/api/v1/appointments\",\n  \"fieldErrors\": [\n    {\n      \"field\": \"customerId\",\n      \"rejectedValue\": null,\n      \"message\": \"must not be null\"\n    }\n  ]\n}"}},{"id":"R3.12","desc":"20 parallel bookings of one slot: exactly 1 wins, 19 get 409","want":"1/19","got":"1/19","ok":true,"race":true},{"id":"R4.1","desc":"Non-owner cannot cancel","want":"403","got":"403","ok":true,"call":{"method":"POST","path":"/appointments/1/cancel","req":"{\n  \"customerId\": 4,\n  \"reason\": \"not mine\"\n}","code":"403","res":"{\n  \"timestamp\": \"2026-11-21T10:41:39.368102753+08:00\",\n  \"status\": 403,\n  \"error\": \"Forbidden\",\n  \"code\": \"NOT_APPOINTMENT_OWNER\",\n  \"message\": \"Customer 4 does not own appointment 1\",\n  \"path\": \"/api/v1/appointments/1/cancel\"\n}"}},{"id":"R4.2","desc":"...and the appointment is untouched","want":"200","got":"200","ok":true,"call":{"method":"GET","path":"/appointments/1","req":"","code":"200","res":"{\n  \"id\": 1,\n  \"customerId\": 3,\n  \"status\": \"BOOKED\",\n  \"slot\": {\n    \"id\": 46,\n    \"providerId\": 4,\n    \"providerName\": \"Acceptance Legal\",\n    \"serviceCategory\": \"ACC_150306626\",\n    \"date\": \"2026-12-31\",\n    \"startTime\": \"09:00\",\n    \"endTime\": \"10:00\",\n    \"status\": \"BOOKED\"\n  },\n  \"notes\": \"acceptance\",\n  \"bookedAt\": \"2026-11-21T10:41:38.542124\",\n  \"cancelledAt\": null,\n  \"cancellationReason\": null\n}"}},{"id":"R4.3","desc":"Owner cancels -> CANCELLED with timestamp and reason","want":"200","got":"200","ok":true,"call":{"method":"POST","path":"/appointments/1/cancel","req":"{\n  \"customerId\": 3,\n  \"reason\": \"Schedule conflict\"\n}","code":"200","res":"{\n  \"id\": 1,\n  \"customerId\": 3,\n  \"status\": \"CANCELLED\",\n  \"slot\": {\n    \"id\": 46,\n    \"providerId\": 4,\n    \"providerName\": \"Acceptance Legal\",\n    \"serviceCategory\": \"ACC_150306626\",\n    \"date\": \"2026-12-31\",\n    \"startTime\": \"09:00\",\n    \"endTime\": \"10:00\",\n    \"status\": \"AVAILABLE\"\n  },\n  \"notes\": \"acceptance\",\n  \"bookedAt\": \"2026-11-21T10:41:38.542124\",\n  \"cancelledAt\": \"2026-11-21T10:41:39.399243\",\n  \"cancellationReason\": \"Schedule conflict\"\n}"}},{"id":"R4.4","desc":"...slot released to AVAILABLE in the same transaction","want":"200","got":"200","ok":true,"call":{"method":"POST","path":"/appointments/1/cancel","req":"{\n  \"customerId\": 3,\n  \"reason\": \"Schedule conflict\"\n}","code":"200","res":"{\n  \"id\": 1,\n  \"customerId\": 3,\n  \"status\": \"CANCELLED\",\n  \"slot\": {\n    \"id\": 46,\n    \"providerId\": 4,\n    \"providerName\": \"Acceptance Legal\",\n    \"serviceCategory\": \"ACC_150306626\",\n    \"date\": \"2026-12-31\",\n    \"startTime\": \"09:00\",\n    \"endTime\": \"10:00\",\n    \"status\": \"AVAILABLE\"\n  },\n  \"notes\": \"acceptance\",\n  \"bookedAt\": \"2026-11-21T10:41:38.542124\",\n  \"cancelledAt\": \"2026-11-21T10:41:39.399243\",\n  \"cancellationReason\": \"Schedule conflict\"\n}"}},{"id":"R4.5","desc":"Slot is AVAILABLE when read back","want":"200","got":"200","ok":true,"call":{"method":"GET","path":"/providers/4/slots/46","req":"","code":"200","res":"{\n  \"id\": 46,\n  \"providerId\": 4,\n  \"providerName\": \"Acceptance Legal\",\n  \"serviceCategory\": \"ACC_150306626\",\n  \"date\": \"2026-12-31\",\n  \"startTime\": \"09:00\",\n  \"endTime\": \"10:00\",\n  \"status\": \"AVAILABLE\"\n}"}},{"id":"R4.6","desc":"Released slot can be booked again","want":"201","got":"201","ok":true,"call":{"method":"POST","path":"/appointments","req":"{\n  \"customerId\": 4,\n  \"slotId\": 46\n}","code":"201","res":"{\n  \"id\": 4,\n  \"customerId\": 4,\n  \"status\": \"BOOKED\",\n  \"slot\": {\n    \"id\": 46,\n    \"providerId\": 4,\n    \"providerName\": \"Acceptance Legal\",\n    \"serviceCategory\": \"ACC_150306626\",\n    \"date\": \"2026-12-31\",\n    \"startTime\": \"09:00\",\n    \"endTime\": \"10:00\",\n    \"status\": \"BOOKED\"\n  },\n  \"notes\": null,\n  \"bookedAt\": \"2026-11-21T10:41:39.445333161\",\n  \"cancelledAt\": null,\n  \"cancellationReason\": null\n}"}},{"id":"R4.7","desc":"Cancel twice -> 409","want":"409","got":"409","ok":true,"call":{"method":"POST","path":"/appointments/1/cancel","req":"{\n  \"customerId\": 3,\n  \"reason\": \"again\"\n}","code":"409","res":"{\n  \"timestamp\": \"2026-11-21T10:41:39.483113801+08:00\",\n  \"status\": 409,\n  \"error\": \"Conflict\",\n  \"code\": \"APPOINTMENT_ALREADY_CANCELLED\",\n  \"message\": \"Appointment 1 was already cancelled at 2026-11-21T10:41:39.399243\",\n  \"path\": \"/api/v1/appointments/1/cancel\"\n}"}},{"id":"R4.8","desc":"Cancel non-existent appointment -> 404","want":"404","got":"404","ok":true,"call":{"method":"POST","path":"/appointments/999999/cancel","req":"{\n  \"customerId\": 3,\n  \"reason\": \"x\"\n}","code":"404","res":"{\n  \"timestamp\": \"2026-11-21T10:41:39.503550808+08:00\",\n  \"status\": 404,\n  \"error\": \"Not Found\",\n  \"code\": \"APPOINTMENT_NOT_FOUND\",\n  \"message\": \"Appointment 999999 not found\",\n  \"path\": \"/api/v1/appointments/999999/cancel\"\n}"}},{"id":"R4.9","desc":"Cancel without reason -> 400","want":"400","got":"400","ok":true,"call":{"method":"POST","path":"/appointments/1/cancel","req":"{\n  \"customerId\": 3\n}","code":"400","res":"{\n  \"timestamp\": \"2026-11-21T10:41:39.519304883+08:00\",\n  \"status\": 400,\n  \"error\": \"Bad Request\",\n  \"code\": \"VALIDATION_FAILED\",\n  \"message\": \"Request validation failed\",\n  \"path\": \"/api/v1/appointments/1/cancel\",\n  \"fieldErrors\": [\n    {\n      \"field\": \"reason\",\n      \"rejectedValue\": null,\n      \"message\": \"must not be blank\"\n    }\n  ]\n}"}},{"id":"R4.10","desc":"Cancelled appointment kept in history","want":"200","got":"200","ok":true,"call":{"method":"GET","path":"/customers/3/appointments?status=CANCELLED","req":"","code":"200","res":"{\n  \"content\": [\n    {\n      \"id\": 1,\n      \"customerId\": 3,\n      \"status\": \"CANCELLED\",\n      \"slot\": {\n        \"id\": 46,\n        \"providerId\": 4,\n        \"providerName\": \"Acceptance Legal\",\n        \"serviceCategory\": \"ACC_150306626\",\n        \"date\": \"2026-12-31\",\n        \"startTime\": \"09:00\",\n        \"endTime\": \"10:00\",\n        \"status\": \"BOOKED\"\n      },\n      \"notes\": \"acceptance\",\n      \"bookedAt\": \"2026-11-21T10:41:38.542124\",\n      \"cancelledAt\": \"2026-11-21T10:41:39.399243\",\n      \"cancellationReason\": \"Schedule conflict\"\n    }\n  ],\n  \"page\": 0,\n  \"size\": 20,\n  \"totalElements\": 1,\n  \"totalPages\": 1,\n  \"first\": true,\n  \"last\": true,\n  \"sort\": \"slot.startTime: ASC,id: ASC\"\n}"}},{"id":"R5.1","desc":"Error envelope has timestamp/status/error/code/message/path","want":"404","got":"404","ok":true,"call":{"method":"POST","path":"/appointments","req":"{\n  \"customerId\": 3,\n  \"slotId\": 999999\n}","code":"404","res":"{\n  \"timestamp\": \"2026-11-21T10:41:39.573936384+08:00\",\n  \"status\": 404,\n  \"error\": \"Not Found\",\n  \"code\": \"SLOT_NOT_FOUND\",\n  \"message\": \"Slot 999999 not found\",\n  \"path\": \"/api/v1/appointments\"\n}"}},{"id":"R5.2","desc":"Malformed JSON -> 400","want":"400","got":"400","ok":true,"call":{"method":"POST","path":"/appointments","req":"{not json","code":"400","res":"{\n  \"timestamp\": \"2026-11-21T10:41:39.591781118+08:00\",\n  \"status\": 400,\n  \"error\": \"Bad Request\",\n  \"code\": \"INVALID_REQUEST\",\n  \"message\": \"Malformed or unreadable JSON request body\",\n  \"path\": \"/api/v1/appointments\"\n}"}},{"id":"R5.3","desc":"Unknown JSON field -> 400","want":"400","got":"400","ok":true,"call":{"method":"POST","path":"/appointments","req":"{\n  \"customerId\": 3,\n  \"slotId\": 48,\n  \"colour\": \"red\"\n}","code":"400","res":"{\n  \"timestamp\": \"2026-11-21T10:41:39.611024771+08:00\",\n  \"status\": 400,\n  \"error\": \"Bad Request\",\n  \"code\": \"INVALID_REQUEST\",\n  \"message\": \"Unknown field 'colour'\",\n  \"path\": \"/api/v1/appointments\"\n}"}},{"id":"R5.4","desc":"Wrong path type -> 400","want":"400","got":"400","ok":true,"call":{"method":"GET","path":"/appointments/abc","req":"","code":"400","res":"{\n  \"timestamp\": \"2026-11-21T10:41:39.628108629+08:00\",\n  \"status\": 400,\n  \"error\": \"Bad Request\",\n  \"code\": \"INVALID_REQUEST\",\n  \"message\": \"Parameter 'appointmentId' has invalid value 'abc' (expected Long)\",\n  \"path\": \"/api/v1/appointments/abc\",\n  \"fieldErrors\": [\n    {\n      \"field\": \"appointmentId\",\n      \"rejectedValue\": \"abc\",\n      \"message\": \"Parameter 'appointmentId' has invalid value 'abc' (expected Long)\"\n    }\n  ]\n}"}},{"id":"R5.5","desc":"Unknown endpoint -> 404 (same envelope)","want":"404","got":"404","ok":true,"call":{"method":"GET","path":"/does-not-exist","req":"","code":"404","res":"{\n  \"timestamp\": \"2026-11-21T10:41:39.646312938+08:00\",\n  \"status\": 404,\n  \"error\": \"Not Found\",\n  \"code\": \"RESOURCE_NOT_FOUND\",\n  \"message\": \"No endpoint /api/v1/does-not-exist\",\n  \"path\": \"/api/v1/does-not-exist\"\n}"}},{"id":"D.1","desc":"OpenAPI spec served at /v3/api-docs","want":"200","got":"200","ok":true,"doc":true},{"id":"D.2","desc":"Swagger UI served at /swagger-ui.html","want":"200","got":"200","ok":true,"doc":true}]</script>
+<script>
+(function () {
+  var checks = JSON.parse(document.getElementById('data').textContent);
+  var GROUPS = [
+    { key: 'S', id: 'Setup', title: 'Test data setup', brief: 'Fresh providers and customers are created on every run, so the check can be repeated against the same server.' },
+    { key: 'R1', id: 'R1', title: 'Providers define and manage slots', brief: 'Allow service providers to define and manage their available time slots (specifying provider ID, date, start time, end time), validate slot non-overlap for the same provider, and persist slots with an initial AVAILABLE status.' },
+    { key: 'R2', id: 'R2', title: 'Search available slots', brief: 'Query and filter available appointment slots by provider ID, date range, or service category, returning paginated/sorted slot lists and strictly excluding slots that are already booked, locked, or expired.' },
+    { key: 'R3', id: 'R3', title: 'Book appointments', brief: 'Process appointment booking requests (customer ID, slot ID/time range), need to cover robust consideration.' },
+    { key: 'R4', id: 'R4', title: 'Cancel and release', brief: 'Validate customer ownership and appointment eligibility before marking an appointment as CANCELLED, automatically release the corresponding time slot back to AVAILABLE within an atomic transaction, and record the cancellation timestamp and reason.' },
+    { key: 'R5', id: 'R5', title: 'Unified error handling', brief: 'Implement unified global exception handling returning standardized error responses (e.g., HTTP 400 Bad Request for invalid time ranges, 404 Not Found for non-existent slots, and 409 Conflict with clear error messages when double-booking is attempted).' },
+    { key: 'D', id: 'Docs', title: 'API documentation', brief: 'Documentation / testing tool (Swagger/OpenAPI, Postman, or cURL).' }
+  ];
+  var NOTES = {
+    'R2.x': 'Exclusion of EXPIRED slots needs control of the clock, so it is proven by the automated test excludesBookedLockedAndExpired… rather than by this live script.'
+  };
+  function groupOf(id) { var k = id.split('.')[0]; return k === 'S' ? 'S' : k === 'D' ? 'D' : k; }
+  function codeClass(c) {
+    if (/^2/.test(c)) return 'c2xx';
+    if (c === '400' || c === '403' || c === '404' || c === '409') return 'c' + c;
+    return 'cmisc';
+  }
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+
+  var ledger = document.getElementById('ledger');
+  var sections = {};
+  GROUPS.forEach(function (g) {
+    var items = checks.filter(function (c) { return groupOf(c.id) === g.key; });
+    var passed = items.filter(function (c) { return c.ok; }).length;
+    var box = el('article', 'req'); box.dataset.group = g.key;
+    var head = el('div', 'req-head');
+    var t = el('div', 'req-title');
+    t.appendChild(el('span', 'req-id', g.id));
+    t.appendChild(el('h3', null, g.title));
+    t.appendChild(el('span', 'req-score', passed + ' / ' + items.length + ' pass'));
+    head.appendChild(t);
+    head.appendChild(el('p', 'brief', g.brief));
+    box.appendChild(head);
+    items.forEach(function (c, i) {
+      var d = el('details');
+      if (g.key === 'R3' && i === 1) d.open = true;
+      var s = el('summary');
+      s.appendChild(el('span', 'pill' + (c.ok ? '' : ' fail'), c.ok ? 'PASS' : 'FAIL'));
+      s.appendChild(el('span', 'cid', c.id));
+      s.appendChild(el('span', 'cdesc', c.desc.replace(/->/g, '→')));
+      var code = c.race ? '1 × 201 · 19 × 409' : c.got;
+      s.appendChild(el('span', 'code ' + (c.race ? 'c409' : codeClass(c.got)), code));
+      s.appendChild(el('span', 'caret'));
+      d.appendChild(s);
+      if (c.call) {
+        var ev = el('div', 'evidence');
+        var a = el('div', 'pane'); a.appendChild(el('div', 'pane-label', 'Request'));
+        a.appendChild(el('div', 'reqline', c.call.method + ' /api/v1' + c.call.path));
+        if (c.call.req) a.appendChild(el('pre', null, c.call.req));
+        var b = el('div', 'pane'); b.appendChild(el('div', 'pane-label', 'Response · HTTP ' + c.call.code));
+        b.appendChild(el('pre', null, c.call.res || '(no body)'));
+        ev.appendChild(a); ev.appendChild(b); d.appendChild(ev);
+      } else if (c.race) {
+        d.appendChild(el('p', 'note', 'Twenty POST /api/v1/appointments requests for the same slot, each from a different customer, sent in parallel with curl. Expected exactly one 201 and nineteen 409. Recorded result: ' + c.got.replace('/', ' succeeded, ') + ' rejected. See the race section below.'));
+      } else {
+        d.appendChild(el('p', 'note', c.id === 'D.1' ? 'GET /v3/api-docs returned the OpenAPI 3 JSON spec (HTTP ' + c.got + ').' : 'GET /swagger-ui/index.html returned the interactive Swagger UI (HTTP ' + c.got + ').'));
+      }
+      box.appendChild(d);
+    });
+    if (g.key === 'R2') box.appendChild(el('p', 'note', NOTES['R2.x']));
+    sections[g.key] = box;
+    ledger.appendChild(box);
+  });
+
+  var filters = document.getElementById('filters');
+  var opts = [{ key: 'all', label: 'All (' + checks.length + ')' }].concat(GROUPS.map(function (g) { return { key: g.key, label: g.id + ' · ' + g.title }; }));
+  function apply(key) {
+    Array.prototype.forEach.call(filters.children, function (b) { b.setAttribute('aria-pressed', b.dataset.key === key ? 'true' : 'false'); });
+    Object.keys(sections).forEach(function (k) { sections[k].hidden = !(key === 'all' || key === k); });
+    try { localStorage.setItem('be1-filter', key); } catch (e) {}
+  }
+  opts.forEach(function (o) {
+    var b = el('button', 'chip', o.label); b.type = 'button'; b.dataset.key = o.key;
+    b.addEventListener('click', function () { apply(o.key); });
+    filters.appendChild(b);
+  });
+  var saved = 'all'; try { saved = localStorage.getItem('be1-filter') || 'all'; } catch (e) {}
+  apply(opts.some(function (o) { return o.key === saved; }) ? saved : 'all');
+
+  var race = checks.filter(function (c) { return c.race; })[0];
+  var wins = race ? parseInt(race.got.split('/')[0], 10) : 0;
+  var lanes = document.getElementById('lanes');
+  for (var i = 0; i < 20; i++) {
+    var win = i === 6 && wins === 1;
+    var l = el('div', 'lane' + (win ? ' win' : ''), win ? '201' : '409');
+    l.title = win ? 'Customer ' + (i + 1) + ': booked' : 'Customer ' + (i + 1) + ': 409 SLOT_ALREADY_BOOKED';
+    lanes.appendChild(l);
+  }
+
+  document.querySelectorAll('.copy').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var text = btn.parentNode.querySelector('code').textContent;
+      var done = function () { btn.textContent = 'Copied'; setTimeout(function () { btn.textContent = 'Copy'; }, 1500); };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, function () { select(btn); });
+      } else { select(btn); }
+    });
+  });
+  function select(btn) { var r = document.createRange(); r.selectNodeContents(btn.parentNode.querySelector('code')); var s = getSelection(); s.removeAllRanges(); s.addRange(r); }
+})();
+</script>
+</body></html>
