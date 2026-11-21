@@ -1,5 +1,7 @@
 # Appointment Management System — Hackathon BE1
 
+[![CI](https://github.com/devinong8/Test/actions/workflows/ci.yml/badge.svg?branch=claude/hackathon-project-build-7xbs7f)](https://github.com/devinong8/Test/actions/workflows/ci.yml)
+
 A REST backend for a professional services firm. **Providers** publish time slots, **customers** search and book
 them, and bookings can be cancelled with the slot released atomically.
 
@@ -39,6 +41,11 @@ java -jar target/appointment-management-1.0.0.jar --spring.profiles.active=postg
 ```
 
 ## Test it
+
+Every push runs the CI pipeline in [`.github/workflows/ci.yml`](.github/workflows/ci.yml): tests on SQLite, the same
+tests on PostgreSQL 16 with a coverage report, then the acceptance check, the load test and a database integrity
+check (`perf/integrity-assert.sql`) that fails the build on any double booking.
+
 
 ```bash
 mvn test                                        # 24 integration tests (SQLite)
