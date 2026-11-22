@@ -53,7 +53,7 @@ public abstract class TestSupport {
 
     protected Region region(String code) {
         return regionRepo.findAll().stream().filter(r -> r.getCode().equals(code)).findFirst()
-                .orElseGet(() -> regionRepo.save(new Region(code, code + " region", "Shanghai")));
+                .orElseGet(() -> regionRepo.save(new Region(code, code + " region")));
     }
 
     protected Sku sku(String code, String cost, String price, String vol, int life) {
@@ -71,10 +71,6 @@ public abstract class TestSupport {
 
     public static AppUserPrincipal hq() {
         return new AppUserPrincipal(1L, "hq.admin", "x", "HQ", Role.HQ_ADMIN, null, null, null, null, true);
-    }
-
-    public static AppUserPrincipal regionManager(Region r) {
-        return new AppUserPrincipal(2L, "rhq", "x", "RHQ", Role.REGION_MANAGER, r.getId(), r.getCode(), null, null, true);
     }
 
     public static AppUserPrincipal shopManager(Shop s) {

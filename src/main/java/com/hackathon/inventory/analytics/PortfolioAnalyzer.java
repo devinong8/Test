@@ -89,10 +89,8 @@ public final class PortfolioAnalyzer {
                 prov, cost.subtract(prov), tierBreakdown(all), rollUpRegions(shops, shopMetrics), shopMetrics, all);
     }
 
-    /** Regional HQ subtotals: sums of their shops; turnover recomputed from the sums (not averaged). */
+    /** Regional subtotals: sums of their shops; turnover recomputed from the sums (not averaged). */
     static List<RegionMetrics> rollUpRegions(Collection<Shop> shops, List<ShopMetrics> shopMetrics) {
-        Map<Long, String> hqCity = new HashMap<>();
-        shops.forEach(s -> hqCity.put(s.getRegion().getId(), s.getRegion().getHqCity()));
         Map<Long, List<ShopMetrics>> byRegion = new TreeMap<>();
         shopMetrics.forEach(m -> byRegion.computeIfAbsent(m.regionId(), k -> new ArrayList<>()).add(m));
         List<RegionMetrics> out = new ArrayList<>();
@@ -105,7 +103,7 @@ public final class PortfolioAnalyzer {
             for (RiskTier t : RiskTier.values()) tiers.put(t, ms.stream().map(m -> m.costByTier().get(t))
                     .reduce(BigDecimal.ZERO.setScale(2), BigDecimal::add));
             ShopMetrics first = ms.get(0);
-            out.add(new RegionMetrics(id, first.regionCode(), first.regionName(), hqCity.get(id), ms.size(),
+            out.add(new RegionMetrics(id, first.regionCode(), first.regionName(), ms.size(),
                     ms.stream().mapToLong(ShopMetrics::units).sum(), cost, retail, cogs, turnoverRate(cogs, cost), prov,
                     cost.subtract(prov), tiers, ratio(used, cap), ratio(cost, budget)));
         });

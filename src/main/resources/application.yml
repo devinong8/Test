@@ -37,6 +37,10 @@ management:
 
 app:
   zone: Asia/Shanghai
+  # The one HQ (the brief's "Regional HQ") that centrally manages every shop
+  hq:
+    name: "中国区总部 China Regional HQ"
+    city: "上海 Shanghai"
   seed:
     enabled: true
   report:

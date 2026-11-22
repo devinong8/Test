@@ -25,7 +25,7 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/api")
 public class AnalyticsController {
-    private static final String HQ_OR_REGION = "hasAnyRole('HQ_ADMIN','REGION_MANAGER')";
+    private static final String HQ = "hasRole('HQ_ADMIN')";
 
     private final AnalyticsService analytics;
     private final ReportService reports;
@@ -67,11 +67,11 @@ public class AnalyticsController {
         return scope.narrow(shops.findByRegionId(regionId).stream().map(Shop::getId).collect(Collectors.toSet()));
     }
 
-    // ----- monthly management report (group HQ and regional HQs)
-    @GetMapping("/reports") @PreAuthorize(HQ_OR_REGION)
+    // ----- monthly management report (HQ)
+    @GetMapping("/reports") @PreAuthorize(HQ)
     public List<ReportView> reports() { return reports.listViews(currentUser.scope()); }
 
-    @GetMapping("/reports/{period}") @PreAuthorize(HQ_OR_REGION)
+    @GetMapping("/reports/{period}") @PreAuthorize(HQ)
     public Map<String, Object> report(@PathVariable String period) {
         String p = YearMonth.parse(period).toString();
         AccessScope scope = currentUser.scope();
@@ -80,7 +80,7 @@ public class AnalyticsController {
         return Map.of("report", view, "lines", lines);
     }
 
-    @GetMapping(value = "/reports/{period}/csv", produces = "text/csv") @PreAuthorize(HQ_OR_REGION)
+    @GetMapping(value = "/reports/{period}/csv", produces = "text/csv") @PreAuthorize(HQ)
     public ResponseEntity<String> csv(@PathVariable String period) {
         String p = YearMonth.parse(period).toString();
         return ResponseEntity.ok()
@@ -88,7 +88,7 @@ public class AnalyticsController {
                 .contentType(MediaType.parseMediaType("text/csv")).body(reports.csv(p, currentUser.scope()));
     }
 
-    /** Manual trigger for the monthly batch (the scheduler calls the same code path). Group HQ only. */
+    /** Manual trigger for the monthly batch (the scheduler calls the same code path). HQ only. */
     @PostMapping("/reports/generate") @PreAuthorize("hasRole('HQ_ADMIN')")
     public ReportView generate(@RequestParam String period) {
         return reports.view(reports.generate(YearMonth.parse(period), "MANUAL").getPeriod(), currentUser.scope());

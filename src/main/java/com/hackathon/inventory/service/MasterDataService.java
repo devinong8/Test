@@ -15,7 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.util.List;
 
-/** Elementary information management: regions (HQ), SKU master, shop master and sales velocity. */
+/** Elementary information management: regions, SKU master, shop master and sales velocity (all owned by HQ). */
 @Service
 @Transactional
 public class MasterDataService {
@@ -31,7 +31,7 @@ public class MasterDataService {
         this.regions = regions;
     }
 
-    // ---------- Region (regional HQ) ----------
+    // ---------- Region (sales grouping of shops; the one HQ manages them all) ----------
     @Transactional(readOnly = true)
     public List<RegionView> listRegions() { return regions.findAllByOrderByCodeAsc().stream().map(this::view).toList(); }
 
@@ -67,12 +67,11 @@ public class MasterDataService {
     private Region apply(Region g, RegionRequest r) {
         g.setCode(r.code().trim().toUpperCase());
         g.setName(r.name().trim());
-        g.setHqCity(r.hqCity().trim());
         return g;
     }
 
     private RegionView view(Region g) {
-        return new RegionView(g.getId(), g.getCode(), g.getName(), g.getHqCity(), g.isActive(),
+        return new RegionView(g.getId(), g.getCode(), g.getName(), g.isActive(),
                 g.getId() == null ? 0 : shops.countByRegionId(g.getId()));
     }
 

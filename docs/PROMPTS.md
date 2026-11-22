@@ -65,3 +65,9 @@ The assistant explained that the seed was a synthetic Southeast-Asian dataset (S
 > You are a reviewer agent - review what was built and documented. Its almost Christmas. So something relatable and chinese. As the hackathon is in china
 
 The assistant reviewed the code and docs, wrote failing tests to prove each suspected bug before fixing it (see `docs/REVIEW.md`), then added the **节日备货 festival pre-stock planner**: 双十二, 冬至 (dumplings north / tangyuan south), 平安夜 平安果 apples, and 春节. One-off seasonal lines are sized by the mooncake sell-through learned from the ledger.
+
+## 8. Fifth iteration: a single HQ
+
+> Make it only 1 HQ
+
+Result: exactly one HQ, **中国区总部 China Regional HQ (Shanghai)**, configured in `app.hq` and shown in the header. The `REGION_MANAGER` role and the four regional-HQ logins were removed, and regions lost their HQ city: they are now only groupings of shops for subtotals and regional demand (冬至). HQ owns all master data, limits, velocities and reports; shop managers run one shop each (one demo manager per region).

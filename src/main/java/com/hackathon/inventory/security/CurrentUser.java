@@ -27,8 +27,6 @@ public class CurrentUser {
         if (p == null) return AccessScope.ALL;
         return switch (p.role()) {
             case HQ_ADMIN -> AccessScope.ALL;
-            case REGION_MANAGER -> new AccessScope(p.role(), p.regionId(), null,
-                    shops.findByRegionId(p.regionId()).stream().map(Shop::getId).collect(Collectors.toSet()));
             case SHOP_MANAGER -> new AccessScope(p.role(), p.regionId(), p.shopId(), Set.of(p.shopId()));
         };
     }

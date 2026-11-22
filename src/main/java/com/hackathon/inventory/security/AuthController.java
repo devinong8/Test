@@ -29,12 +29,9 @@ public class AuthController {
     private static final Logger log = LoggerFactory.getLogger(AuthController.class);
 
     public record LoginRequest(@NotBlank String username, @NotBlank String password) {}
+    /** hqName / hqCity identify the one HQ that runs every shop (app.hq.*). */
     public record Me(String username, String displayName, Role role, Long regionId, String regionCode,
-                     Long shopId, String shopCode) {
-        static Me of(AppUserPrincipal p) {
-            return new Me(p.username(), p.displayName(), p.role(), p.regionId(), p.regionCode(), p.shopId(), p.shopCode());
-        }
-    }
+                     Long shopId, String shopCode, String hqName, String hqCity) {}
     public record DemoAccount(String username, String displayName, Role role, String scope) {}
 
     private final AuthenticationManager authManager;
@@ -43,12 +40,16 @@ public class AuthController {
     private final CurrentUser currentUser;
     private final AppUserRepository users;
     private final boolean demoMode;
+    private final String hqName;
+    private final String hqCity;
 
     public AuthController(AuthenticationManager authManager, SecurityContextRepository contextRepo,
                           CookieCsrfTokenRepository csrfRepo, CurrentUser currentUser, AppUserRepository users,
-                          @Value("${app.seed.enabled:false}") boolean demoMode) {
+                          @Value("${app.seed.enabled:false}") boolean demoMode,
+                          @Value("${app.hq.name:Regional HQ}") String hqName, @Value("${app.hq.city:}") String hqCity) {
         this.authManager = authManager; this.contextRepo = contextRepo; this.csrfRepo = csrfRepo;
         this.currentUser = currentUser; this.users = users; this.demoMode = demoMode;
+        this.hqName = hqName; this.hqCity = hqCity;
     }
 
     @PostMapping("/login")
@@ -63,7 +64,7 @@ public class AuthController {
             csrfRepo.saveToken(null, req, res);                                   // rotate CSRF token on login
             AppUserPrincipal p = (AppUserPrincipal) auth.getPrincipal();
             log.info("LOGIN user={} role={}", p.username(), p.role());
-            return ResponseEntity.ok(Me.of(p));
+            return ResponseEntity.ok(me(p));
         } catch (AuthenticationException e) {
             log.warn("LOGIN_FAILED user={}", r.username());
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
@@ -73,8 +74,13 @@ public class AuthController {
 
     @GetMapping("/me")
     public ResponseEntity<Me> me() {
-        return currentUser.principal().map(p -> ResponseEntity.ok(Me.of(p)))
+        return currentUser.principal().map(p -> ResponseEntity.ok(me(p)))
                 .orElse(ResponseEntity.status(HttpStatus.UNAUTHORIZED).build());
+    }
+
+    private Me me(AppUserPrincipal p) {
+        return new Me(p.username(), p.displayName(), p.role(), p.regionId(), p.regionCode(), p.shopId(), p.shopCode(),
+                hqName, hqCity);
     }
 
     /** Lists seeded demo logins on the sign-in screen. Only exposed when the demo seed is enabled. */
@@ -82,7 +88,6 @@ public class AuthController {
     public List<DemoAccount> demoAccounts() {
         if (!demoMode) return List.of();
         return users.findAllByOrderByRoleAscUsernameAsc().stream().map(u -> new DemoAccount(u.getUsername(),
-                u.getDisplayName(), u.getRole(), u.getShop() != null ? u.getShop().getCode()
-                        : u.getRegion() != null ? u.getRegion().getCode() : "All regions")).toList();
+                u.getDisplayName(), u.getRole(), u.getShop() != null ? u.getShop().getCode() : "All shops")).toList();
     }
 }

@@ -1,8 +1,8 @@
 package com.hackathon.inventory.domain;
 
 /**
- * HQ_ADMIN       - group HQ: every region and shop; owns SKU catalogue, regions, users and the monthly batch.
- * REGION_MANAGER - a regional HQ: shops, stock and reports of one region.
- * SHOP_MANAGER   - one shop: its stock, movements, ledger and alerts.
+ * There is exactly one HQ (the brief's "Regional HQ", configured in app.hq) and it manages every shop centrally.
+ * HQ_ADMIN     - HQ staff: every shop; owns the SKU catalogue, regions, shops, limits and the monthly batch.
+ * SHOP_MANAGER - one shop: its stock, movements, ledger, alerts and festival plan.
  */
-public enum Role { HQ_ADMIN, REGION_MANAGER, SHOP_MANAGER }
+public enum Role { HQ_ADMIN, SHOP_MANAGER }

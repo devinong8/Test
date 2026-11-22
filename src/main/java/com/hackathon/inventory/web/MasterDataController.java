@@ -1,6 +1,5 @@
 package com.hackathon.inventory.web;
 
-import com.hackathon.inventory.domain.Role;
 import com.hackathon.inventory.domain.Sku;
 import com.hackathon.inventory.security.AccessScope;
 import com.hackathon.inventory.security.CurrentUser;
@@ -8,21 +7,19 @@ import com.hackathon.inventory.service.MasterDataService;
 import com.hackathon.inventory.web.dto.*;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
-import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
 /**
- * Regions and the SKU catalogue are owned by group HQ. Regional HQs manage the shops in their own region;
- * shop managers have read access to their own shop.
+ * The single HQ owns all master data: regions, the SKU catalogue, shops, their limits and sales velocities.
+ * Shop managers have read access to their own shop (and its region) and the catalogue.
  */
 @RestController
 @RequestMapping("/api")
 public class MasterDataController {
     private static final String HQ = "hasRole('HQ_ADMIN')";
-    private static final String HQ_OR_REGION = "hasAnyRole('HQ_ADMIN','REGION_MANAGER')";
 
     private final MasterDataService service;
     private final CurrentUser currentUser;
@@ -31,7 +28,7 @@ public class MasterDataController {
         this.service = service; this.currentUser = currentUser;
     }
 
-    // ----- regions (regional HQs)
+    // ----- regions (sales groupings of shops)
     @GetMapping("/regions")
     public List<RegionView> regions() {
         AccessScope scope = currentUser.scope();
@@ -69,20 +66,18 @@ public class MasterDataController {
     @GetMapping("/shops/{id}")
     public ShopView shop(@PathVariable Long id) { currentUser.scope().requireShop(id); return service.getShopView(id); }
 
-    @PostMapping("/shops") @ResponseStatus(HttpStatus.CREATED) @PreAuthorize(HQ_OR_REGION)
+    @PostMapping("/shops") @ResponseStatus(HttpStatus.CREATED) @PreAuthorize(HQ)
     public ShopView createShop(@Valid @RequestBody ShopRequest r) {
-        requireOwnRegion(r.regionId());
         return service.createShop(r);
     }
-    @PutMapping("/shops/{id}") @PreAuthorize(HQ_OR_REGION)
+    @PutMapping("/shops/{id}") @PreAuthorize(HQ)
     public ShopView updateShop(@PathVariable Long id, @Valid @RequestBody ShopRequest r) {
         currentUser.scope().requireShop(id);
-        requireOwnRegion(r.regionId());
         return service.updateShop(id, r);
     }
-    @DeleteMapping("/shops/{id}") @PreAuthorize(HQ_OR_REGION)
+    @DeleteMapping("/shops/{id}") @PreAuthorize(HQ)
     public ShopView deactivateShop(@PathVariable Long id) { currentUser.scope().requireShop(id); return service.deactivateShop(id); }
-    @PostMapping("/shops/{id}/activate") @PreAuthorize(HQ_OR_REGION)
+    @PostMapping("/shops/{id}/activate") @PreAuthorize(HQ)
     public ShopView activateShop(@PathVariable Long id) { currentUser.scope().requireShop(id); return service.activateShop(id); }
 
     @GetMapping("/shops/{shopId}/velocities")
@@ -90,18 +85,11 @@ public class MasterDataController {
         currentUser.scope().requireShop(shopId);
         return service.listVelocities(shopId);
     }
-    @PutMapping("/shops/{shopId}/velocities/{skuId}") @PreAuthorize(HQ_OR_REGION)
+    @PutMapping("/shops/{shopId}/velocities/{skuId}") @PreAuthorize(HQ)
     public List<VelocityView> setVelocity(@PathVariable Long shopId, @PathVariable Long skuId,
                                           @Valid @RequestBody VelocityRequest r) {
         currentUser.scope().requireShop(shopId);
         service.setVelocity(shopId, skuId, r.dailySalesVelocity());
         return service.listVelocities(shopId);
-    }
-
-    /** A regional manager may only place shops into their own region. */
-    private void requireOwnRegion(Long regionId) {
-        AccessScope scope = currentUser.scope();
-        if (scope.role() == Role.REGION_MANAGER && !scope.canSeeRegion(regionId))
-            throw new AccessDeniedException("You can only manage shops in your own region");
     }
 }

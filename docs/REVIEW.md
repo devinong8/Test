@@ -2,6 +2,8 @@
 
 **Scope:** the whole repository: backend (domain, services, security, scheduler), front end, seed data, tests and docs.
 **Method:** read every write path and security boundary; **for each suspected bug, write a test that fails first**, then fix it and keep the test as a regression guard. Also checked every documented claim against the running app.
+*Update: the organisation model was later simplified to a single HQ (no regional HQs or region managers). The scoping findings below still apply to HQ vs shop manager.*
+
 **Result:** 8 issues fixed (1 high, 4 medium, 3 low); 9 accepted for the hackathon with a stated production path. 53 JUnit tests + 27 browser checks pass.
 
 ## Fixed
@@ -12,7 +14,7 @@
 | 2 | Medium | `@PastOrPresent` on `batchProductionDate` uses the **JVM default zone, which is UTC on the server**. Between 00:00 and 08:00 China time, receiving a batch produced "today" was rejected with 400. | `user.timezone` is UTC in the container; the business clock is Asia/Shanghai. | Removed the annotation; the service checks against the injected Asia/Shanghai `Clock`. Test `productionDateInTheFutureIsRejectedUsingBusinessClock`. |
 | 3 | Medium | The front end used `toISOString()` (UTC) for "today". Before 08:00 in China, the default production date was yesterday, the date picker's `max` blocked choosing today, and on the 1st of a month the report period could default to the wrong month. | Code read: 4 call sites. | `localDate()` helper using the browser's local calendar. |
 | 4 | Medium | **CSV formula injection (CWE-1236).** Shop names are user-editable. A name like `=HYPERLINK(...)` was exported as-is and would execute when HQ opens the report in Excel / WPS. | Test `csvNeutralisesSpreadsheetFormulaInjection`. | Text cells starting with `= + - @ \t \r` are prefixed with `'`, and all text cells are quoted. |
-| 5 | Medium | **The previous user's data stayed rendered after sign-out.** On a shared till, an HQ session followed by a shop manager could briefly show HQ figures. Found when the browser e2e read a stale table. | The e2e "中秋 lesson shows all 4 regions" read the previous user's table. | Sign-out does a full page reload, so no DOM or JS state survives. e2e now passes. |
+| 5 | Medium | **The previous user's data stayed rendered after sign-out.** On a shared till, an HQ session followed by a shop manager could briefly show HQ-wide figures. Found when the browser e2e read a stale table. | The e2e "中秋 lesson shows all 4 regions" read the previous user's table. | Sign-out does a full page reload, so no DOM or JS state survives. e2e now passes. |
 | 6 | Low | For a shop with no stock, turnover = COGS / (0 + ε) ≈ 10⁸×. It displayed as a huge number and flattened the turnover chart. | Formula per brief; display issue only. | Tables show "– no stock"; zero-stock shops are left out of the turnover chart. The API still returns the brief's exact value. |
 | 7 | Low | Alerts sorted by shop code, so a ¥47.50 milk write-off ranked above ¥5,000 of expired mooncakes. | Seeded data. | Within a severity, alerts are ranked by value at risk. |
 | 8 | Low (docs) | Stale or incorrect claims: test counts (36/42 → **53**), e2e checks (23 → **27**), SKU count (20 → **21**), margin range "35–50%" (actual **33–51%**), seeding time. | Counted from surefire reports and the catalogue. | README / BRIEFING corrected; README test table updated per suite. |

@@ -15,7 +15,7 @@ public class AppUser {
     private String displayName;
     @Enumerated(EnumType.STRING) @Column(nullable = false, length = 20)
     private Role role;
-    /** Set for REGION_MANAGER (their region) and SHOP_MANAGER (their shop's region). */
+    /** For SHOP_MANAGER: the region of their shop (denormalised for display). Null for HQ staff. */
     @ManyToOne @JoinColumn(name = "region_id")
     private Region region;
     /** Set for SHOP_MANAGER only. */

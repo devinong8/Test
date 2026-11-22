@@ -56,7 +56,7 @@ class LoginFlowHttpTest extends TestSupport {
         send("GET", "/api/auth/me", null);   // picks up the rotated CSRF token
         assertThat(send("GET", "/api/auth/me", null).body()).contains("hq.admin");
         assertThat(send("GET", "/api/shops", null).statusCode()).isEqualTo(200);
-        assertThat(send("POST", "/api/regions", "{\"code\":\"X\",\"name\":\"X\",\"hqCity\":\"Y\"}").statusCode()).isEqualTo(201);
+        assertThat(send("POST", "/api/regions", "{\"code\":\"X\",\"name\":\"X\"}").statusCode()).isEqualTo(201);
 
         assertThat(send("POST", "/api/auth/logout", null).statusCode()).isEqualTo(204);
         assertThat(send("GET", "/api/shops", null).statusCode()).isEqualTo(401);

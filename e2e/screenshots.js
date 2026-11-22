@@ -30,7 +30,7 @@ const out = path.join(__dirname, '..', 'docs', 'screenshots');
   // ---- sign-in screen
   await page.goto(base + '/');
   await page.waitForSelector('#demoList button');
-  check(await page.locator('#demoList button').count() === 7, 'sign-in lists the 7 demo accounts');
+  check(await page.locator('#demoList button').count() === 5, 'sign-in lists 5 demo accounts: 1 HQ + 4 shop managers');
   await page.fill('#loginForm input[name=username]', 'hq.admin');
   await page.fill('#loginForm input[name=password]', 'wrong-password');
   await page.click('#loginForm button[type=submit]');
@@ -56,22 +56,13 @@ const out = path.join(__dirname, '..', 'docs', 'screenshots');
   await page.screenshot({ path: `${out}/10-dashboard-shop-manager.png` });
   await logout(page);
 
-  // ---- regional HQ: own region only
-  await login(page, 'rhq.south');
-  check((await page.textContent('#dashTitle')).includes('CN-SOUTH'), 'regional HQ lands on its region dashboard');
-  check(await page.locator('#regionTable tr').count() === 2, 'regional HQ sees only its own region');
-  check(await page.locator('#shopTable tr').count() === 10, 'regional HQ sees its 9 shops');
-  check(!(await page.isVisible('#genForm')), 'only group HQ can run the monthly batch');
-  await page.screenshot({ path: `${out}/11-dashboard-regional-hq.png` });
-  await page.goto(base + '/#reports');
-  await page.waitForSelector('#reportRegions tr:nth-child(2)');
-  check(await page.locator('#reportRegions tr').count() === 2, 'regional HQ report shows only its region');
-  await logout(page);
-
-  // ---- group HQ: everything
+  // ---- the one HQ: every shop
   await login(page, 'hq.admin');
-  check((await page.textContent('#dashTitle')).includes('Group HQ'), 'group HQ sees the group dashboard');
-  check(await page.locator('#regionTable tr').count() === 5, 'group HQ sees all 4 regional HQs');
+  check((await page.textContent('#dashTitle')).includes('中国区总部'), 'HQ lands on the one-HQ dashboard (中国区总部)');
+  check((await page.textContent('#hqBrand')).includes('中国区总部'), 'header names the single HQ');
+  check(await page.locator('#regionTable tr').count() === 5, 'HQ sees all 4 regions as groupings of its shops');
+  check(!(await page.textContent('#regionTable')).includes('Regional HQ'), 'regions carry no HQ of their own');
+  check(await page.locator('#shopTable tr').count() === 34, 'HQ sees all 33 shops');
   check(await page.locator('#kpiTiles .tile').count() === 7, 'dashboard shows 7 KPI tiles');
   check(await page.locator('#shopTable tr').count() > 20, 'shop breakdown lists all shops');
   await page.screenshot({ path: `${out}/01-dashboard.png`, fullPage: true });

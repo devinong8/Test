@@ -34,8 +34,8 @@ class FestivalPlannerIntegrationTest extends TestSupport {
 
     @BeforeEach
     void setUp() {
-        north = regionRepo.save(new Region("CN-NORTH", "华北 North China", "北京 Beijing"));
-        east = regionRepo.save(new Region("CN-EAST", "华东 East China", "上海 Shanghai"));
+        north = regionRepo.save(new Region("CN-NORTH", "华北 North China"));
+        east = regionRepo.save(new Region("CN-EAST", "华东 East China"));
         bj = shop(north, "BJ-01", "100", "100000");
         sh = shop(east, "SH-01", "100", "100000");
         tight = shop(east, "SH-02", "100", "50.00");                    // almost no budget
@@ -110,7 +110,9 @@ class FestivalPlannerIntegrationTest extends TestSupport {
         mvc.perform(get("/api/analytics/festival-plan").param("horizonDays", "40").with(user(shopManager(bj))))
                 .andExpect(jsonPath("$.events[*].lines[*].shopCode", everyItem(is("BJ-01"))))
                 .andExpect(jsonPath("$.lessons", hasSize(0)));            // no mooncake history at BJ-01
-        mvc.perform(get("/api/analytics/festival-plan").param("horizonDays", "40").with(user(regionManager(east))))
+        // HQ can narrow the plan to one region
+        mvc.perform(get("/api/analytics/festival-plan").param("horizonDays", "40").param("regionId", east.getId().toString())
+                        .with(user(hq())))
                 .andExpect(jsonPath("$.events[*].lines[*].regionCode", everyItem(is("CN-EAST"))))
                 .andExpect(jsonPath("$.lessons[0].regionCode").value("CN-EAST"));
         assertThat(planner.plan(400, Set.of(sh.getId())).events()).extracting(FestivalPlan.Event::code)

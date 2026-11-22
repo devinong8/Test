@@ -9,17 +9,17 @@
 </head>
 <body>
 <header class="topbar">
-  <div class="brand"><span class="logo">▣</span> Regional Inventory HQ <span class="cn">区域库存</span></div>
+  <div class="brand"><span class="logo">▣</span> <span id="hqBrand">Regional Inventory HQ</span></div>
   <nav id="nav">
     <a href="#dashboard" data-page="dashboard">Dashboard</a>
-    <a href="#regions" data-page="regions" data-roles="HQ_ADMIN,REGION_MANAGER">Regions</a>
+    <a href="#regions" data-page="regions" data-roles="HQ_ADMIN">Regions</a>
     <a href="#inventory" data-page="inventory">Inventory</a>
     <a href="#movements" data-page="movements">Stock In / Out</a>
     <a href="#ledger" data-page="ledger">Ledger</a>
     <a href="#skus" data-page="skus">SKUs</a>
     <a href="#shops" data-page="shops">Shops</a>
     <a href="#festivals" data-page="festivals">节日备货 Festivals</a>
-    <a href="#reports" data-page="reports" data-roles="HQ_ADMIN,REGION_MANAGER">Reports</a>
+    <a href="#reports" data-page="reports" data-roles="HQ_ADMIN">Reports</a>
   </nav>
   <div class="userchip" id="userChip" hidden>
     <div><div class="uname" id="userName"></div><div class="urole" id="userRole"></div></div>
@@ -53,8 +53,8 @@
       </div>
     </div>
     <div class="card" id="regionCard">
-      <h3>Regional HQ breakdown</h3>
-      <p class="hint">Each regional HQ's roll-up of its shops. Turnover is recomputed from summed COGS and cost, not averaged.</p>
+      <h3>Region breakdown</h3>
+      <p class="hint">Each region's roll-up of its shops. All regions are run by the one HQ. Turnover is recomputed from summed COGS and cost, not averaged.</p>
       <div class="table-wrap"><table id="regionTable" class="data"></table></div>
     </div>
     <div class="card">
@@ -76,7 +76,7 @@
   <!-- REGIONS -->
   <section id="page-regions" class="page">
     <div class="page-head">
-      <div><h1>Regions and regional HQs</h1><p class="sub">Group HQ owns the SKU catalogue and the regions. Each regional HQ manages the shops in its region.</p></div>
+      <div><h1>Regions</h1><p class="sub" id="regionsSub">Regions group shops for reporting and regional demand (e.g. 冬至 dumplings in the north, tangyuan in the south). They have no HQ of their own: the one HQ manages every shop.</p></div>
       <button data-roles="HQ_ADMIN" onclick="App.editRegion()">+ New region</button>
     </div>
     <div class="card"><div class="table-wrap"><table id="regionMasterTable" class="data"></table></div></div>
@@ -146,18 +146,18 @@
 
   <!-- SKUS -->
   <section id="page-skus" class="page">
-    <div class="page-head"><div><h1>SKU master</h1><p class="sub">One product catalogue for all regions, maintained by group HQ.</p></div><button data-roles="HQ_ADMIN" onclick="App.editSku()">+ New SKU</button></div>
+    <div class="page-head"><div><h1>SKU master</h1><p class="sub">One product catalogue for every shop, maintained by HQ.</p></div><button data-roles="HQ_ADMIN" onclick="App.editSku()">+ New SKU</button></div>
     <div class="card"><div class="table-wrap"><table id="skuTable" class="data"></table></div></div>
   </section>
 
   <!-- SHOPS -->
   <section id="page-shops" class="page">
-    <div class="page-head"><div><h1>Shop master</h1></div><button data-roles="HQ_ADMIN,REGION_MANAGER" onclick="App.editShop()">+ New Shop</button></div>
+    <div class="page-head"><div><h1>Shop master</h1></div><button data-roles="HQ_ADMIN" onclick="App.editShop()">+ New Shop</button></div>
     <div class="card"><div class="table-wrap"><table id="shopMasterTable" class="data"></table></div></div>
     <div class="card" id="velocityCard" hidden>
       <h3 id="velocityTitle">Sales velocity</h3>
       <p class="hint">Historical daily sales velocity per SKU. This drives COGS<sub>30d</sub>, turnover and days-of-cover.</p>
-      <form class="inline" id="velocityForm" data-roles="HQ_ADMIN,REGION_MANAGER">
+      <form class="inline" id="velocityForm" data-roles="HQ_ADMIN">
         <select name="skuId" class="skuSelect"></select>
         <input name="dailySalesVelocity" type="number" step="0.1" min="0" placeholder="units / day" required>
         <button type="submit">Set velocity</button>
@@ -197,7 +197,7 @@
       <div class="card"><h3>Regional turnover rate trend</h3><p class="hint">Monthly COGS<sub>30d</sub> ÷ V<sub>cost</sub> across all shops.</p><div class="chart-box"><canvas id="turnTrend"></canvas></div></div>
     </div>
     <div class="grid2">
-    <div class="card"><h3>Purchase-cost value by region</h3><p class="hint">Each regional HQ's inventory at cost at each month-end.</p><div class="chart-box"><canvas id="regionTrend"></canvas></div></div>
+    <div class="card"><h3>Purchase-cost value by region</h3><p class="hint">Each region's inventory at cost at each month-end.</p><div class="chart-box"><canvas id="regionTrend"></canvas></div></div>
     <div class="card"><h3>Depreciation provision trend</h3><p class="hint">Valuation provision booked against purchase cost at each month-end.</p><div class="chart-box"><canvas id="provTrend"></canvas></div></div>
     </div>
     <div class="card">

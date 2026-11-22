@@ -8,8 +8,8 @@ import java.util.Set;
 import java.util.function.Function;
 
 /**
- * Which shops the current user may see and act on. shopIds == null means every shop (group HQ, or internal
- * callers with no user such as the scheduler and seeder).
+ * Which shops the current user may see and act on. shopIds == null means every shop (HQ, or internal callers with
+ * no user such as the scheduler and seeder). A shop manager is scoped to one shop and its region's metadata.
  */
 public record AccessScope(Role role, Long regionId, Long shopId, Set<Long> shopIds) {
 
@@ -21,11 +21,9 @@ public record AccessScope(Role role, Long regionId, Long shopId, Set<Long> shopI
 
     public boolean canSeeRegion(Long id) { return isAll() || (regionId != null && regionId.equals(id)); }
 
-    /** Report lines are snapshots: a regional manager sees lines booked to their region at the time. */
+    /** Report lines are per-shop snapshots: HQ sees all of them, anyone else only their own shops' lines. */
     public boolean canSeeReportLine(Long lineRegionId, Long lineShopId) {
-        if (isAll()) return true;
-        if (role == Role.REGION_MANAGER) return regionId != null && regionId.equals(lineRegionId);
-        return canSeeShop(lineShopId);
+        return isAll() || canSeeShop(lineShopId);
     }
 
     public void requireShop(Long id) {

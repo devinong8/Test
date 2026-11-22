@@ -22,7 +22,7 @@ const App = (() => {
   const badge = (t, cls) => `<span class="badge ${cls}">${esc(t)}</span>`;
   const meter = v => `<span class="meter ${v >= 0.9 ? 'hot' : ''}"><i style="width:${Math.min(100, v * 100)}%"></i></span>${pct(v)}`;
 
-  const ROLE_LABEL = { HQ_ADMIN: 'Group HQ', REGION_MANAGER: 'Regional HQ', SHOP_MANAGER: 'Shop manager' };
+  const ROLE_LABEL = { HQ_ADMIN: 'HQ', SHOP_MANAGER: 'Shop manager' };
   const csrfToken = () => (document.cookie.match(/(?:^|; )XSRF-TOKEN=([^;]*)/) || [])[1];
   async function api(path, opts = {}) {
     const headers = { 'Content-Type': 'application/json' };
@@ -108,8 +108,8 @@ const App = (() => {
     const [pm, alerts] = await Promise.all([api('/analytics/portfolio' + rq), api('/analytics/alerts' + rq)]);
     const me = state.me;
     $('#dashTitle').textContent = me.role === 'SHOP_MANAGER' ? `Shop overview · ${me.shopCode}`
-      : me.role === 'REGION_MANAGER' ? `Regional HQ overview · ${me.regionCode}` : 'Group HQ overview';
-    $('#asOf').textContent = `Live valuation as of ${pm.asOfDate} · ${pm.regions.length} region${pm.regions.length === 1 ? '' : 's'} · ${pm.shops.length} shop${pm.shops.length === 1 ? '' : 's'} · ${num(pm.units)} units on hand`;
+      : `${me.hqName} · all shops`;
+    $('#asOf').textContent = `Live valuation as of ${pm.asOfDate} · ${pm.regions.length} region${pm.regions.length === 1 ? '' : 's'} · ${pm.shops.length} shop${pm.shops.length === 1 ? '' : 's'} · ${num(pm.units)} units on hand` + (state.me.hqCity ? ` · HQ: ${state.me.hqCity}` : '');
     $('#regionCard').hidden = me.role === 'SHOP_MANAGER';
     $('#regionTable').innerHTML = regionRows(pm.regions);
     const tiles = [
@@ -162,8 +162,8 @@ const App = (() => {
   };
 
   function regionRows(regions) {
-    return `<tr><th>Region</th><th>HQ</th><th class="num">Shops</th><th class="num">Units</th><th class="num">V<sub>cost</sub></th><th class="num">V<sub>retail</sub></th><th class="num">COGS 30d</th><th class="num">Turnover</th><th class="num">Provision</th><th class="num">Net realisable</th><th>Storage</th><th>Budget</th></tr>` +
-      regions.map(r => `<tr><td><b>${esc(r.regionCode)}</b> ${esc(r.regionName)}</td><td>${esc(r.hqCity)}</td><td class="num">${r.shopCount}</td><td class="num">${num(r.units)}</td><td class="num">${money(r.costValue)}</td><td class="num">${money(r.retailValue)}</td>
+    return `<tr><th>Region</th><th class="num">Shops</th><th class="num">Units</th><th class="num">V<sub>cost</sub></th><th class="num">V<sub>retail</sub></th><th class="num">COGS 30d</th><th class="num">Turnover</th><th class="num">Provision</th><th class="num">Net realisable</th><th>Storage</th><th>Budget</th></tr>` +
+      regions.map(r => `<tr><td><b>${esc(r.regionCode)}</b> ${esc(r.regionName)}</td><td class="num">${r.shopCount}</td><td class="num">${num(r.units)}</td><td class="num">${money(r.costValue)}</td><td class="num">${money(r.retailValue)}</td>
       <td class="num">${money(r.cogs30d)}</td><td class="num">${turn(r.turnoverRate, r.costValue)}</td><td class="num">${money(r.provision)}</td><td class="num">${money(r.netRealisableCost)}</td><td>${meter(r.storageUtilisation)}</td><td>${meter(r.budgetUtilisation)}</td></tr>`).join('');
   }
 
@@ -211,14 +211,14 @@ const App = (() => {
     await loadMaster();
     const pm = await api('/analytics/portfolio');
     const metrics = Object.fromEntries(pm.regions.map(r => [r.regionId, r]));
-    $('#regionMasterTable').innerHTML = `<tr><th>Code</th><th>Name</th><th>Regional HQ city</th><th class="num">Shops</th><th class="num">V<sub>cost</sub></th><th class="num">Turnover</th><th class="num">Provision</th><th>Storage</th><th>Budget</th><th>Status</th><th></th></tr>` +
-      state.regions.map(g => { const m = metrics[g.id]; return `<tr class="${g.active ? '' : 'inactive'}"><td><b>${esc(g.code)}</b></td><td>${esc(g.name)}</td><td>${esc(g.hqCity)}</td><td class="num">${g.shopCount}</td>
+    $('#regionMasterTable').innerHTML = `<tr><th>Code</th><th>Name</th><th class="num">Shops</th><th class="num">V<sub>cost</sub></th><th class="num">Turnover</th><th class="num">Provision</th><th>Storage</th><th>Budget</th><th>Status</th><th></th></tr>` +
+      state.regions.map(g => { const m = metrics[g.id]; return `<tr class="${g.active ? '' : 'inactive'}"><td><b>${esc(g.code)}</b></td><td>${esc(g.name)}</td><td class="num">${g.shopCount}</td>
       <td class="num">${m ? money(m.costValue) : '–'}</td><td class="num">${m ? num(m.turnoverRate, 2) + '×' : '–'}</td><td class="num">${m ? money(m.provision) : '–'}</td><td>${m ? meter(m.storageUtilisation) : '–'}</td><td>${m ? meter(m.budgetUtilisation) : '–'}</td>
       <td>${g.active ? 'Active' : 'Inactive'}</td><td>${can('HQ_ADMIN') ? `<button class="small ghost" onclick="App.editRegion(${g.id})">Edit</button> <button class="small ghost" onclick="App.toggleRegion(${g.id})">${g.active ? 'Deactivate' : 'Activate'}</button>` : ''}</td></tr>`; }).join('');
   };
   function editRegion(id) {
     const g = state.regions.find(x => x.id === id);
-    openModal(g ? 'Edit region ' + g.code : 'New region', [['code', 'Code', 'text'], ['name', 'Name', 'text'], ['hqCity', 'Regional HQ city', 'text']], g, async body => {
+    openModal(g ? 'Edit region ' + g.code : 'New region', [['code', 'Code', 'text'], ['name', 'Name', 'text']], g, async body => {
       await api(g ? '/regions/' + id : '/regions', { method: g ? 'PUT' : 'POST', body: JSON.stringify(body) });
       toast('Region saved'); loaders.regions();
     });
@@ -343,7 +343,7 @@ const App = (() => {
   // ---------- Shops ----------
   loaders.shops = async () => {
     await loadMaster();
-    const manage = can('HQ_ADMIN', 'REGION_MANAGER');
+    const manage = can('HQ_ADMIN');
     $('#shopMasterTable').innerHTML = `<tr><th>Code</th><th>Name</th><th>Region</th><th>City</th><th class="num">Capacity m³</th><th class="num">Budget</th><th>Storage used</th><th>Budget used</th><th>Status</th><th></th></tr>` +
       state.shops.map(s => `<tr class="clickable ${s.active ? '' : 'inactive'}" data-id="${s.id}"><td><b>${esc(s.code)}</b></td><td>${esc(s.name)}</td><td>${esc(s.regionCode)}</td><td>${esc(s.city)}</td><td class="num">${num(s.storageCapacityM3, 3)}</td><td class="num">${money(s.capitalBudget)}</td>
       <td>${meter(s.storageUtilisation)}</td><td>${meter(s.budgetUtilisation)}</td><td>${s.active ? 'Active' : 'Inactive'}</td>
@@ -513,7 +513,8 @@ const App = (() => {
     const me = state.me;
     $('#userChip').hidden = false;
     $('#userName').textContent = me.displayName;
-    $('#userRole').textContent = ROLE_LABEL[me.role] + (me.shopCode ? ' · ' + me.shopCode : me.regionCode ? ' · ' + me.regionCode : ' · all regions');
+    $('#userRole').textContent = ROLE_LABEL[me.role] + (me.shopCode ? ' · ' + me.shopCode : ' · all shops');
+    $('#hqBrand').textContent = me.hqName || 'Regional Inventory HQ';
     document.body.dataset.role = me.role;
     applyRoles();
     $('#regionFilter').value = '';

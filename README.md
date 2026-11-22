@@ -1,12 +1,12 @@
 # Product Inventory Management — Hackathon BE2
 
-Regional HQ system that manages product inventory for a China convenience-store chain: **33 shops across 11 cities in 4 regions**, priced in RMB (¥) and running on China Standard Time. It covers regions, SKU and shop master data, Stock-In / Stock-Out with storage and capital-budget limits, batch-level depreciation risk, an automated **Monthly Management Report** with trends, and a **节日备货 festival pre-stock planner** (双十二, 冬至, 平安夜, 春节). Access is role-based: group HQ, regional HQ and shop manager.
+One Regional HQ, **中国区总部 China Regional HQ (Shanghai)**, centrally manages product inventory for a China convenience-store chain: **33 shops across 11 cities**, grouped into 4 sales regions, priced in RMB (¥) and running on China Standard Time. It covers regions, SKU and shop master data, Stock-In / Stock-Out with storage and capital-budget limits, batch-level depreciation risk, an automated **Monthly Management Report** with trends, and a **节日备货 festival pre-stock planner** (双十二, 冬至, 平安夜, 春节). Access is role-based: HQ staff and shop managers.
 
 **Stack:** Java 21 · Spring Boot 3.4 (Web, Data JPA, Validation, Security, Actuator, Scheduling) · H2 (file DB; JPA makes it swappable for Postgres) · Micrometer/Prometheus · vanilla JS + Chart.js front end (bundled locally, works offline).
 
 | Acceptance criterion | Status | Where |
 |---|---|---|
-| (Mandatory) Elementary information management: SKU and shop | ✅ CRUD, validation, unique codes, soft-deactivate; shops belong to a **Region** (regional HQ) | `MasterDataService`, UI **Regions** / **SKUs** / **Shops** tabs |
+| (Mandatory) Elementary information management: SKU and shop | ✅ CRUD, validation, unique codes, soft-deactivate; one HQ manages all shops; shops are grouped into **Regions** | `MasterDataService`, UI **Regions** / **SKUs** / **Shops** tabs |
 | (Mandatory) On-going inventory management: Stock-In / Stock-Out, analysis and observability | ✅ Ledger, FEFO, limits, alerts, metrics, correlation ids | `InventoryService`, `AnalyticsService`, UI **Stock In / Out**, **Ledger**, **Inventory**, **Dashboard** |
 | (Optional plus) Monthly management report: automated batch, valuation / turnover / depreciation across all shops, with trend | ✅ `@Scheduled` batch, point-in-time rebuild from the ledger, regional subtotals, CSV export | `ReportService`, `ReportScheduler`, UI **Reports** |
 | *(Beyond the brief)* Festival pre-stock planning | ✅ Per-shop recommendations for upcoming Chinese retail events, timed to stay NORMAL tier and sized by last season's sell-through | `FestivalPlanner`, `FestivalCalendar`, UI **节日备货 Festivals** |
@@ -28,7 +28,8 @@ The data is **synthetic but modelled on a Chinese convenience-store / community-
 
 | | |
 |---|---|
-| **Regions (regional HQs)** | 华东 East China (HQ 上海 Shanghai) · 华南 South China (HQ 广州 Guangzhou) · 华北 North China (HQ 北京 Beijing) · 西南 Southwest (HQ 成都 Chengdu) |
+| **HQ** | **One:** 中国区总部 China Regional HQ, 上海 Shanghai (`app.hq.*`). It owns the catalogue, all shops, their limits and the monthly report |
+| **Regions (groupings, no HQs)** | 华东 East China · 华南 South China · 华北 North China · 西南 Southwest China |
 | **Cities → shops** | Shanghai, Hangzhou, Nanjing, Suzhou · Guangzhou, Shenzhen, Dongguan · Beijing, Tianjin · Chengdu, Chongqing. Three shops per city, named by district (e.g. `SH-01 静安店 Jing'an`, `SZ-02 南山店 Nanshan`, `CD-02 高新店 Hi-tech Zone`) |
 | **SKUs (21, generic, no brands)** | 鲜牛奶 fresh milk (7-day life), 鲜肉包 pork buns (3 days), 嫩豆腐 tofu, 鲜鸡蛋 eggs, 东北大米 Northeast rice, 花生油 peanut oil, 方便面 instant noodles, 生抽 soy sauce, 辣椒油 chili crisp, 无糖乌龙茶 sugar-free oolong, 饮用水 bottled water, 白酒 baijiu (10-year life, ¥268), 速冻水饺 frozen dumplings, 汤圆 tangyuan, 瓜子 sunflower seeds, **月饼礼盒 mooncake gift box** (60-day life), **平安果礼盒 Christmas Eve apple gift box** (21-day life, ranged but not yet sold this year), 抽纸 tissues, 洗衣液 laundry liquid, 牙膏 toothpaste, 常温酸奶 ambient yogurt |
 | **Prices** | RMB at typical tier-1 city shelf prices, with 33–51% gross margin. Charts use 万 / 亿 units |
@@ -47,7 +48,7 @@ The data is **synthetic but modelled on a Chinese convenience-store / community-
 | Event | Date | What lifts | Why it's relatable |
 |---|---|---|---|
 | 双十二 Double 12 | 12 Dec | Tissues, laundry liquid, toothpaste, water ×1.4–1.5 | Second shopping festival after 双十一 |
-| 冬至 Winter Solstice | 22 Dec (the solstice falls at 04:50 Beijing time) | **North: dumplings ×3.5 · East / South / Southwest: tangyuan ×3.5** | 北方吃饺子，南方吃汤圆: a regional HQ difference the planner honours per region |
+| 冬至 Winter Solstice | 22 Dec (the solstice falls at 04:50 Beijing time) | **North: dumplings ×3.5 · East / South / Southwest: tangyuan ×3.5** | 北方吃饺子，南方吃汤圆: a regional difference the planner honours per shop region |
 | 平安夜 Christmas Eve | 24 Dec | **平安果 gift-wrapped apples** (a one-off seasonal SKU) | 苹果 "ping" echoes 平安 (peace): the Chinese Christmas Eve gift |
 | 春节 Spring Festival | 6 Feb 2027 | Baijiu ×4, peanut oil ×2.5, rice ×2, sunflower seeds ×3, dumplings, water | The year's biggest stock-up |
 
@@ -56,7 +57,7 @@ How each line is worked out (`FestivalPlanner`):
 - **One-off seasonal SKUs (平安果):** forecast = 25/day × the shop's traffic index × 3 days, minus stock still sellable on the day. It is then **scaled by the region's sell-through on last season's mooncakes, learned from the ledger** (about 80% in every region), so the mooncake overstock isn't repeated.
 - **Receive window:** *from* = festival end − ⌊0.6 × shelf life⌋, so the batch is still **NORMAL tier (R<sub>dep</sub> < 0.60, 0% provision) on the last festival day**. *By* = 2 days before the window opens. For 21-day apples that's 12–20 Dec.
 - **Limits:** every line is capped by the shop's remaining storage m³ and capital budget, which are consumed line by line. Capped lines are flagged.
-- **Scope:** a shop manager sees only their shop's plan, and a regional HQ only its region. Every role gets the same numbers for the same shop.
+- **Scope:** HQ sees every shop (and can filter by region); a shop manager sees only their own shop's plan. Both get the same numbers for the same shop.
 
 Each line has a **Stock-in** button that pre-fills the Stock-In form.
 
@@ -66,12 +67,8 @@ All seeded accounts use the password `demo1234` (set by `app.seed.demo-password`
 
 | Username | Role | Sees and manages |
 |---|---|---|
-| `hq.admin` | **Group HQ** (`HQ_ADMIN`) | Everything. The only role that can edit regions and the SKU catalogue and run the monthly batch |
-| `rhq.east` | **Regional HQ** (`REGION_MANAGER`), 华东 East China, Shanghai | Its 12 shops: shops, limits, velocities, stock, reports |
-| `rhq.south` | Regional HQ, 华南 South China, Guangzhou | Its 9 shops |
-| `rhq.north` | Regional HQ, 华北 North China, Beijing | Its 6 shops |
-| `rhq.sw` | Regional HQ, 西南 Southwest China, Chengdu | Its 6 shops |
-| `shop.sh01` / `shop.gz01` | **Shop manager** (`SHOP_MANAGER`): 上海静安店 / 广州天河店 | One shop: dashboard, inventory, stock in/out, ledger, alerts. Read-only master data, no reports |
+| `hq.admin` | **HQ** (`HQ_ADMIN`), 中国区总部, the only HQ | Everything: all 33 shops, regions, SKU catalogue, shop limits and velocities, reports and the monthly batch |
+| `shop.sh01` / `shop.gz01` / `shop.bj01` / `shop.cd01` | **Shop manager** (`SHOP_MANAGER`): 上海静安店 / 广州天河店 / 北京朝阳店 / 成都锦江店 (one per region) | One shop: dashboard, inventory, stock in/out, ledger, alerts, festival plan. Read-only catalogue, no reports or master-data changes |
 
 For a real deployment with seeding off, set `APP_SECURITY_BOOTSTRAP_ADMIN_PASSWORD` to create the first `hq.admin` on an empty database.
 
@@ -93,9 +90,9 @@ node e2e/screenshots.js           # with the app running: browser e2e + regenera
 | `FestivalCalendarTest` (4) | Calendar dates in Beijing time; apples received on *from* are NORMAL tier on 24 Dec and one day earlier would be MODERATE; long-life goods can be ordered now; 冬至 is regional |
 | `FestivalPlannerIntegrationTest` (4) | Hand-computed plans: north pre-stocks 20 dumplings and the east 10 tangyuan; apples sized 75 → 57 by the region's 75% mooncake sell-through; budget cap; role scoping |
 | `ApiIntegrationTest` (3) | REST contract: 201/400/404/422 problem responses, correlation-id propagation, ledger filters, analytics numbers, region subtotals, CSV, health, metrics |
-| `SecurityIntegrationTest` (5) | **Role and row-level scoping**: anonymous → 401; group HQ sees both regions with subtotals that add up; a regional HQ sees only its region (shops, ledger, analytics, report totals, CSV) and can't open shops elsewhere, edit SKUs or run the batch; a shop manager sees and moves only its own shop; missing CSRF token → 403 |
+| `SecurityIntegrationTest` (5) | **One HQ + row-level scoping**: anonymous → 401; HQ sees every shop with regional subtotals that add up and can filter by region; regions carry no HQ; the HQ identity is returned to every user; only HQ can create or change shops, regions, SKUs, limits and velocities or see reports; a shop manager sees and moves only its own shop; missing CSRF token → 403 |
 | `LoginFlowHttpTest` (1) | The browser's real HTTP flow on a random port: XSRF cookie → bad password 401 → login → HttpOnly session cookie → API → logout → 401 |
-| `e2e/screenshots.js` (27 checks) | Real browser, signed in as each role: sign-in screen and bad password; the shop manager's single-shop view with no Reports/Regions tabs; the regional HQ's region-only dashboard and report; group HQ dashboard, regions, festival plan (four events, 中秋 lesson, 平安果 lines), the shop manager's own-shop festival plan, tier filter, stock-in, oversell rejected, ledger, ≥ 6-month trend, dark theme, phone width, zero console errors |
+| `e2e/screenshots.js` (25 checks) | Real browser, signed in as each role: sign-in screen and bad password; the shop manager's single-shop view with no Reports/Regions tabs; the HQ dashboard named for the one HQ with all 33 shops and 4 regions, regions, festival plan (four events, 中秋 lesson, 平安果 lines), the shop manager's own-shop festival plan, tier filter, stock-in, oversell rejected, ledger, ≥ 6-month trend, dark theme, phone width, zero console errors |
 
 Tests run against an in-memory DB with the clock fixed to `2026-11-22 10:00` China Standard Time, so they are deterministic.
 
@@ -105,12 +102,11 @@ Independent review findings and their fixes are in [`docs/REVIEW.md`](docs/REVIE
 
 ## Where is the Regional HQ?
 
-It is modelled explicitly at two levels:
+There is **exactly one HQ**, as the brief describes ("Regional HQ centrally manages product inventory for dozens of shops across multiple cities"):
 
-1. **`Region`**: a regional HQ (code, name, HQ city). Every `Shop` belongs to exactly one region. The dashboard, Regions page and monthly report roll shops up into **regional subtotals**. Turnover is recomputed from summed COGS and cost, not averaged across shops.
-2. **Roles (`AppUser`)**: *Group HQ* owns the SKU catalogue, the regions and the monthly batch. A *Regional HQ* user manages the shops, limits and velocities of its own region. A *Shop manager* runs one shop. Every API call is filtered to the caller's scope on the server (`CurrentUser` → `AccessScope`), not just hidden in the UI.
-
-The SKU catalogue is intentionally group-wide (one price list), and shop limits are set by HQ. That matches the brief's "Regional HQ centrally manages product inventory".
+1. **Identity:** 中国区总部 China Regional HQ, Shanghai. Configured in `app.hq.name` / `app.hq.city`, returned by `/api/auth/me` and shown in the app header and dashboard.
+2. **Authority:** the `HQ_ADMIN` role *is* the HQ. It alone owns the SKU catalogue (one price list), opens and closes shops, sets each shop's storage and capital-budget limits and sales velocities, and runs the monthly report. `SHOP_MANAGER` users run one shop each. Every API call is filtered to the caller's scope on the server (`CurrentUser` → `AccessScope`), not just hidden in the UI.
+3. **Regions are not HQs.** `Region` (华东 / 华南 / 华北 / 西南) is only a grouping of shops. It gives regional subtotals on the dashboard and in the report, and region-specific demand in the festival planner (冬至: dumplings in the north, tangyuan in the south). Regions have no HQ city and no managers of their own.
 
 ## Architecture
 
@@ -157,8 +153,10 @@ flowchart LR
 
 ```mermaid
 erDiagram
-  REGION ||--o{ SHOP : "regional HQ runs"
-  REGION ||--o{ APP_USER : "regional HQ staff"
+  HQ ||--o{ REGION : "groups shops into"
+  HQ ||--o{ SHOP : "manages all"
+  HQ ||--o{ APP_USER : "HQ staff (HQ_ADMIN)"
+  REGION ||--o{ SHOP : groups
   SHOP ||--o{ APP_USER : "shop manager"
   SHOP ||--o{ INVENTORY_BATCH : holds
   SKU  ||--o{ INVENTORY_BATCH : "of"
@@ -166,7 +164,8 @@ erDiagram
   SKU  ||--o{ SALES_VELOCITY : has
   INVENTORY_BATCH ||--o{ STOCK_TRANSACTION : "ledger (signed qty)"
   MONTHLY_REPORT ||--o{ MONTHLY_REPORT_LINE : "per shop"
-  REGION { string code UK  string name  string hq_city }
+  HQ { string name "app.hq (exactly one)"  string city }
+  REGION { string code UK  string name }
   APP_USER { string username UK  string password_hash  enum role }
   SKU { string code UK  decimal purchase_price  decimal sale_price  decimal unit_volume_m3  int shelf_life_days }
   SHOP { string code UK  string city  decimal storage_capacity_m3  decimal capital_budget }
@@ -183,7 +182,7 @@ erDiagram
 5. **Rules are checked before any write.** Capacity, budget, expired-on-arrival and insufficient stock are validated first. Failures return 422 with machine-readable `details` (for example `maxAcceptableQty`), and the UI shows them.
 6. **Money uses `BigDecimal`** (scale 2, HALF_UP). Ratios use `double`.
 7. **Time is injected through `Clock`** in Asia/Shanghai (CST, UTC+8), which makes tests deterministic and runs the cron on China time.
-8. **Security in two layers.** Roles are checked with `@PreAuthorize` (for example, only group HQ edits SKUs). Row-level scope is enforced by `AccessScope` in every controller, covering reads, writes, analytics, ledger, reports and CSV. Report totals are **re-aggregated from the visible lines**, so a regional HQ never sees group totals.
+8. **Security in two layers.** Roles are checked with `@PreAuthorize` (for example, only HQ edits SKUs and shops). Row-level scope is enforced by `AccessScope` in every controller, covering reads, writes, analytics, ledger, reports and CSV. Report totals are **re-aggregated from the visible lines**, so no one ever sees figures for shops outside their scope.
 9. **SPA auth done properly.** Session cookie (`HttpOnly`, `SameSite=Lax`), session-id rotation on login, CSRF via the `XSRF-TOKEN` cookie plus `X-XSRF-TOKEN` header (token rotated on login), bcrypt passwords, and JSON 401/403 problem responses instead of browser pop-ups.
 
 ### Formulas (from the brief) → code
@@ -213,13 +212,13 @@ erDiagram
 | Method | Path | Purpose |
 |---|---|---|
 | POST | `/api/auth/login` · `/api/auth/logout` | sign in / out (session cookie) |
-| GET | `/api/auth/me` | current user, role and scope |
-| GET/POST | `/api/regions` | list (scoped) / create region (group HQ) |
-| GET/PUT/DELETE | `/api/regions/{id}` | read / update / deactivate (group HQ; blocked while active shops remain) |
+| GET | `/api/auth/me` | current user, role, scope and the HQ's identity |
+| GET/POST | `/api/regions` | list (scoped) / create region (HQ) |
+| GET/PUT/DELETE | `/api/regions/{id}` | read / update / deactivate (HQ; blocked while active shops remain) |
 | GET/POST | `/api/skus` | list / create SKU |
 | GET/PUT/DELETE | `/api/skus/{id}` | read / update / deactivate (blocked while stock is on hand) |
 | POST | `/api/skus/{id}/activate` | reactivate |
-| GET/POST | `/api/shops?regionId=` | list (scoped, with live utilisation) / create shop (group HQ, or regional HQ in its own region) |
+| GET/POST | `/api/shops?regionId=` | list (scoped, with live utilisation) / create shop (HQ) |
 | GET/PUT/DELETE | `/api/shops/{id}` | read / update (capacity and budget can't go below current usage) / deactivate |
 | GET | `/api/shops/{id}/velocities` | velocity, on hand and days of cover per SKU |
 | PUT | `/api/shops/{id}/velocities/{skuId}` | set daily sales velocity |
@@ -231,7 +230,7 @@ erDiagram
 | GET | `/api/analytics/portfolio?regionId=&includeBatches=` | total, **per-region** and per-shop valuation, turnover, depreciation (scoped) |
 | GET | `/api/analytics/alerts?regionId=` | prioritised alerts with reorder qty, ranked by value at risk (scoped) |
 | GET | `/api/analytics/festival-plan?horizonDays=&regionId=` | 节日备货 festival pre-stock plan and the 中秋 sell-through lesson (scoped) |
-| GET | `/api/reports` | report history (trend) with regional subtotals. Group or regional HQ only |
+| GET | `/api/reports` | report history (trend) with regional subtotals. HQ only |
 | GET | `/api/reports/{yyyy-MM}` | report and per-shop lines |
 | GET | `/api/reports/{yyyy-MM}/csv` | CSV export |
 | POST | `/api/reports/generate?period=yyyy-MM` | manual run of the monthly batch |
@@ -240,7 +239,7 @@ Each role gets **only the data in its scope**: 401 when signed out, 403 when out
 
 ## Screenshots
 
-`docs/screenshots/` contains the sign-in screen, the dashboard per role (group HQ light/dark/mobile, regional HQ, shop manager), the Regions page, the festival plan, batch inventory, stock movements (success and rejected oversell), ledger, SKUs, shops with velocity, and monthly reports.
+`docs/screenshots/` contains the sign-in screen, the dashboard per role (HQ light/dark/mobile, shop manager), the Regions page, the festival plan, batch inventory, stock movements (success and rejected oversell), ledger, SKUs, shops with velocity, and monthly reports.
 
 ## Submission materials
 

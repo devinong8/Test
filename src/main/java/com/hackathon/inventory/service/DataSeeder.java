@@ -89,12 +89,10 @@ public class DataSeeder implements ApplicationRunner {
     private static final List<LocalDate> MID_AUTUMN = List.of(LocalDate.of(2025, 10, 6), LocalDate.of(2026, 9, 25),
             LocalDate.of(2027, 9, 15), LocalDate.of(2028, 10, 3), LocalDate.of(2029, 9, 22));
 
-    /** {region code, region name, regional HQ city}. */
+    /** {region code, region name}. Sales regions only; the one HQ (app.hq, Shanghai) runs them all. */
     private static final String[][] REGIONS = {
-            {"CN-EAST", "华东 East China", "上海 Shanghai"},
-            {"CN-SOUTH", "华南 South China", "广州 Guangzhou"},
-            {"CN-NORTH", "华北 North China", "北京 Beijing"},
-            {"CN-SW", "西南 Southwest China", "成都 Chengdu"}};
+            {"CN-EAST", "华东 East China"}, {"CN-SOUTH", "华南 South China"},
+            {"CN-NORTH", "华北 North China"}, {"CN-SW", "西南 Southwest China"}};
 
     /** {shop-code prefix, city, region code, three districts}. 11 cities x 3 shops = 33 shops. */
     private static final String[][] CITIES = {
@@ -124,7 +122,7 @@ public class DataSeeder implements ApplicationRunner {
                     new BigDecimal(d.vol()), d.life())));
 
         Map<String, Region> regionByCode = new HashMap<>();
-        for (String[] r : REGIONS) regionByCode.put(r[0], regions.save(new Region(r[0], r[1], r[2])));
+        for (String[] r : REGIONS) regionByCode.put(r[0], regions.save(new Region(r[0], r[1])));
 
         ZoneId zone = clock.getZone();
         LocalDate today = LocalDate.now(clock);
@@ -180,14 +178,13 @@ public class DataSeeder implements ApplicationRunner {
         String hash = encoder.encode(demoPassword);
         Map<String, Shop> byCode = new HashMap<>();
         shops.findAll().forEach(sh -> byCode.put(sh.getCode(), sh));
-        users.save(new AppUser("hq.admin", hash, "集团总部 Group HQ Admin", Role.HQ_ADMIN, null, null));
-        users.save(new AppUser("rhq.east", hash, "华东区域总部 East China RHQ", Role.REGION_MANAGER, regionByCode.get("CN-EAST"), null));
-        users.save(new AppUser("rhq.south", hash, "华南区域总部 South China RHQ", Role.REGION_MANAGER, regionByCode.get("CN-SOUTH"), null));
-        users.save(new AppUser("rhq.north", hash, "华北区域总部 North China RHQ", Role.REGION_MANAGER, regionByCode.get("CN-NORTH"), null));
-        users.save(new AppUser("rhq.sw", hash, "西南区域总部 Southwest RHQ", Role.REGION_MANAGER, regionByCode.get("CN-SW"), null));
-        users.save(new AppUser("shop.sh01", hash, "上海静安店 店长 Store Manager", Role.SHOP_MANAGER, regionByCode.get("CN-EAST"), byCode.get("SH-01")));
-        users.save(new AppUser("shop.gz01", hash, "广州天河店 店长 Store Manager", Role.SHOP_MANAGER, regionByCode.get("CN-SOUTH"), byCode.get("GZ-01")));
-        log.info("Seeded demo users: hq.admin, rhq.east, rhq.south, rhq.north, rhq.sw, shop.sh01, shop.gz01");
+        users.save(new AppUser("hq.admin", hash, "中国区总部 HQ Admin", Role.HQ_ADMIN, null, null));
+        for (String[] m : new String[][]{{"shop.sh01", "SH-01", "上海静安店"}, {"shop.gz01", "GZ-01", "广州天河店"},
+                {"shop.bj01", "BJ-01", "北京朝阳店"}, {"shop.cd01", "CD-01", "成都锦江店"}}) {
+            Shop shop = byCode.get(m[1]);
+            users.save(new AppUser(m[0], hash, m[2] + " 店长 Store Manager", Role.SHOP_MANAGER, shop.getRegion(), shop));
+        }
+        log.info("Seeded demo users: hq.admin (the one HQ), shop.sh01, shop.gz01, shop.bj01, shop.cd01");
     }
 
     private static int indexOf(String code) {
