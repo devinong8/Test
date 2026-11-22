@@ -43,8 +43,8 @@ class SecurityIntegrationTest extends TestSupport {
     @BeforeEach
     void setUp() {
         mvc = MockMvcBuilders.webAppContextSetup(ctx).apply(springSecurity()).build();
-        ra = regionRepo.save(new Region("RA", "Region A", "Singapore"));
-        rb = regionRepo.save(new Region("RB", "Region B", "Bangkok"));
+        ra = regionRepo.save(new Region("RA", "Region A", "Shanghai"));
+        rb = regionRepo.save(new Region("RB", "Region B", "Guangzhou"));
         a1 = shop(ra, "A1", "100", "100000");
         a2 = shop(ra, "A2", "100", "100000");
         b1 = shop(rb, "B1", "100", "100000");

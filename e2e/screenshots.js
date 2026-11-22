@@ -30,7 +30,7 @@ const out = path.join(__dirname, '..', 'docs', 'screenshots');
   // ---- sign-in screen
   await page.goto(base + '/');
   await page.waitForSelector('#demoList button');
-  check(await page.locator('#demoList button').count() === 5, 'sign-in lists the 5 demo accounts');
+  check(await page.locator('#demoList button').count() === 7, 'sign-in lists the 7 demo accounts');
   await page.fill('#loginForm input[name=username]', 'hq.admin');
   await page.fill('#loginForm input[name=password]', 'wrong-password');
   await page.click('#loginForm button[type=submit]');
@@ -39,8 +39,8 @@ const out = path.join(__dirname, '..', 'docs', 'screenshots');
   await page.screenshot({ path: `${out}/00-sign-in.png` });
 
   // ---- shop manager: own shop only
-  await login(page, 'shop.sg01');
-  check((await page.textContent('#dashTitle')).includes('SG-01'), 'shop manager lands on own-shop dashboard');
+  await login(page, 'shop.sh01');
+  check((await page.textContent('#dashTitle')).includes('SH-01'), 'shop manager lands on own-shop dashboard');
   check(await page.locator('#shopTable tr').count() === 2, 'shop manager sees exactly one shop');
   check(!(await page.isVisible('#nav a[data-page=reports]')) && !(await page.isVisible('#nav a[data-page=regions]')), 'shop manager has no Reports/Regions tabs');
   await page.goto(base + '/#skus');
@@ -53,10 +53,10 @@ const out = path.join(__dirname, '..', 'docs', 'screenshots');
   await logout(page);
 
   // ---- regional HQ: own region only
-  await login(page, 'rhq.mainland');
-  check((await page.textContent('#dashTitle')).includes('SEA-MAINLAND'), 'regional HQ lands on its region dashboard');
+  await login(page, 'rhq.south');
+  check((await page.textContent('#dashTitle')).includes('CN-SOUTH'), 'regional HQ lands on its region dashboard');
   check(await page.locator('#regionTable tr').count() === 2, 'regional HQ sees only its own region');
-  check(await page.locator('#shopTable tr').count() === 9, 'regional HQ sees its 8 shops');
+  check(await page.locator('#shopTable tr').count() === 10, 'regional HQ sees its 9 shops');
   check(!(await page.isVisible('#genForm')), 'only group HQ can run the monthly batch');
   await page.screenshot({ path: `${out}/11-dashboard-regional-hq.png` });
   await page.goto(base + '/#reports');
@@ -67,7 +67,7 @@ const out = path.join(__dirname, '..', 'docs', 'screenshots');
   // ---- group HQ: everything
   await login(page, 'hq.admin');
   check((await page.textContent('#dashTitle')).includes('Group HQ'), 'group HQ sees the group dashboard');
-  check(await page.locator('#regionTable tr').count() === 3, 'group HQ sees both regional HQs');
+  check(await page.locator('#regionTable tr').count() === 5, 'group HQ sees all 4 regional HQs');
   check(await page.locator('#kpiTiles .tile').count() === 7, 'dashboard shows 7 KPI tiles');
   check(await page.locator('#shopTable tr').count() > 20, 'shop breakdown lists all shops');
   await page.screenshot({ path: `${out}/01-dashboard.png`, fullPage: true });
@@ -109,7 +109,7 @@ const out = path.join(__dirname, '..', 'docs', 'screenshots');
 
   await page.goto(base + '/#regions');
   await page.waitForSelector('#regionMasterTable tr:nth-child(2)');
-  check(await page.locator('#regionMasterTable tr').count() === 3, 'regions page lists both regions');
+  check(await page.locator('#regionMasterTable tr').count() === 5, 'regions page lists all 4 regions');
   await page.screenshot({ path: `${out}/12-regions.png` });
 
   await page.goto(base + '/#reports');

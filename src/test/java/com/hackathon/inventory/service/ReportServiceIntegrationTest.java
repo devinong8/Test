@@ -22,7 +22,7 @@ class ReportServiceIntegrationTest extends TestSupport {
 
     @Test
     void reportRebuildsInventoryAsOfMonthEndFromLedger() {
-        Shop shop = shop("SG-01", "100", "100000");
+        Shop shop = shop("SH-01", "100", "100000");
         Sku rice = sku("RICE", "8.00", "12.00", "0.005", 100);
         velocityRepo.save(new SalesVelocity(shop, rice, new BigDecimal("2")));   // configured: used live, not in reports
 
@@ -58,15 +58,15 @@ class ReportServiceIntegrationTest extends TestSupport {
 
         assertThat(reports.list()).extracting(MonthlyReport::getPeriod).containsExactly("2026-09", "2026-10", "2026-11");
         assertThat(reports.get("2026-10").getLines()).singleElement().satisfies(l -> {
-            assertThat(l.getShopCode()).isEqualTo("SG-01");
+            assertThat(l.getShopCode()).isEqualTo("SH-01");
             assertThat(l.getProvision()).isEqualByComparingTo("120.00");
         });
-        assertThat(reports.csv("2026-10")).contains("2026-10,R-DEFAULT,SG-01").contains("480.00");
+        assertThat(reports.csv("2026-10")).contains("2026-10,R-DEFAULT,SH-01").contains("480.00");
     }
 
     @Test
     void regenerationReplacesExistingReportAndFuturePeriodsRejected() {
-        shop("SG-01", "100", "1000");
+        shop("SH-01", "100", "1000");
         reports.generate(YearMonth.of(2026, 10), "MANUAL");
         reports.generate(YearMonth.of(2026, 10), "MANUAL");
         assertThat(reportRepo.count()).isEqualTo(1);
@@ -76,7 +76,7 @@ class ReportServiceIntegrationTest extends TestSupport {
 
     @Test
     void schedulerGeneratesPreviousMonth() {
-        shop("SG-01", "100", "1000");
+        shop("SH-01", "100", "1000");
         scheduler.generatePreviousMonth();
         assertThat(reportRepo.findByPeriod("2026-10")).get()
                 .extracting(MonthlyReport::getTrigger).isEqualTo("SCHEDULED");
@@ -84,7 +84,7 @@ class ReportServiceIntegrationTest extends TestSupport {
 
     @Test
     void alertsFlagLowStockWithBudgetAwareReorderAndExpiry() {
-        Shop shop = shop("SG-01", "100", "100.00");
+        Shop shop = shop("SH-01", "100", "100.00");
         Sku milk = sku("MILK", "2.00", "3.50", "0.001", 10);
         velocityRepo.save(new SalesVelocity(shop, milk, new BigDecimal("10")));
         inventory.stockIn(new StockInRequest(shop.getId(), milk.getId(), 20L, null, TODAY.minusDays(9), null, null));

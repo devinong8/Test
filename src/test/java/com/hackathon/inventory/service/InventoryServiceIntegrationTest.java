@@ -29,7 +29,7 @@ class InventoryServiceIntegrationTest extends TestSupport {
 
     @Test
     void stockInCreatesBatchAndLedgerEntry() {
-        Shop shop = shop("SG-01", "10", "10000");
+        Shop shop = shop("SH-01", "10", "10000");
         Sku milk = sku("MILK", "2.00", "3.50", "0.001", 14);
         MovementResult r = inventory.stockIn(in(shop, milk, 100, TODAY.minusDays(1)));
 
@@ -47,7 +47,7 @@ class InventoryServiceIntegrationTest extends TestSupport {
 
     @Test
     void stockInRejectedWhenStorageCapacityExceeded() {
-        Shop shop = shop("SG-01", "1.000", "100000");
+        Shop shop = shop("SH-01", "1.000", "100000");
         Sku soda = sku("SODA", "9.00", "15.90", "0.011", 300);
         inventory.stockIn(in(shop, soda, 80, TODAY));                   // 0.88 m3 used
         assertThatThrownBy(() -> inventory.stockIn(in(shop, soda, 20, TODAY)))
@@ -61,7 +61,7 @@ class InventoryServiceIntegrationTest extends TestSupport {
 
     @Test
     void stockInRejectedWhenCapitalBudgetExceeded() {
-        Shop shop = shop("SG-01", "100", "500.00");
+        Shop shop = shop("SH-01", "100", "500.00");
         Sku rice = sku("RICE", "7.50", "12.90", "0.006", 540);
         assertThatThrownBy(() -> inventory.stockIn(in(shop, rice, 67, TODAY)))   // 502.50 > 500
                 .isInstanceOfSatisfying(BusinessRuleException.class, e -> {
@@ -73,7 +73,7 @@ class InventoryServiceIntegrationTest extends TestSupport {
 
     @Test
     void expiredGoodsCannotBeReceivedAndAgedGoodsWarn() {
-        Shop shop = shop("SG-01", "100", "10000");
+        Shop shop = shop("SH-01", "100", "10000");
         Sku bread = sku("BREAD", "1.20", "2.60", "0.003", 5);
         assertThatThrownBy(() -> inventory.stockIn(in(shop, bread, 10, TODAY.minusDays(6))))
                 .hasFieldOrPropertyWithValue("code", "EXPIRED_ON_ARRIVAL");
@@ -83,7 +83,7 @@ class InventoryServiceIntegrationTest extends TestSupport {
 
     @Test
     void inactiveMasterDataBlocksStockIn() {
-        Shop shop = shop("SG-01", "100", "10000");
+        Shop shop = shop("SH-01", "100", "10000");
         Sku sku = sku("X", "1.00", "2.00", "0.001", 10);
         sku.setActive(false);
         skuRepo.save(sku);
@@ -92,7 +92,7 @@ class InventoryServiceIntegrationTest extends TestSupport {
 
     @Test
     void stockOutAllocatesFirstExpiredFirstOut() {
-        Shop shop = shop("SG-01", "100", "10000");
+        Shop shop = shop("SH-01", "100", "10000");
         Sku milk = sku("MILK", "2.00", "3.50", "0.001", 14);
         inventory.stockIn(in(shop, milk, 30, TODAY.minusDays(2)));   // newer
         inventory.stockIn(in(shop, milk, 20, TODAY.minusDays(8)));   // older -> must go first
@@ -105,7 +105,7 @@ class InventoryServiceIntegrationTest extends TestSupport {
 
     @Test
     void salesSkipExpiredStockButWriteOffCanRemoveIt() {
-        Shop shop = shop("SG-01", "100", "10000");
+        Shop shop = shop("SH-01", "100", "10000");
         Sku bread = sku("BREAD", "1.20", "2.60", "0.003", 5);
         // received 4 days ago when fresh; produced 6 days ago -> expired today (R=1.2)
         inventory.stockIn(in(shop, bread, 10, TODAY.minusDays(6)), at(TODAY.minusDays(4)));
@@ -137,7 +137,7 @@ class InventoryServiceIntegrationTest extends TestSupport {
 
     @Test
     void concurrentStockOutsNeverOversell() throws Exception {
-        Shop shop = shop("SG-01", "100", "10000");
+        Shop shop = shop("SH-01", "100", "10000");
         Sku milk = sku("MILK", "2.00", "3.50", "0.001", 14);
         inventory.stockIn(in(shop, milk, 100, TODAY.minusDays(1)));
 

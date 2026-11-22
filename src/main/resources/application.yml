@@ -36,11 +36,11 @@ management:
       show-details: always
 
 app:
-  zone: Asia/Singapore
+  zone: Asia/Shanghai
   seed:
     enabled: true
   report:
-    # 01:00 on the 1st of every month (Singapore time) -> report for the month just closed
+    # 01:00 on the 1st of every month (China Standard Time, UTC+8) -> report for the month just closed
     cron: "0 0 1 1 * *"
 
 logging:

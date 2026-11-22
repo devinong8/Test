@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Regional Inventory HQ</title>
+  <title>Regional Inventory HQ 区域库存</title>
   <link rel="stylesheet" href="app.css">
   <script src="vendor/chart.umd.min.js"></script>
 </head>
 <body>
 <header class="topbar">
-  <div class="brand"><span class="logo">▣</span> Regional Inventory HQ</div>
+  <div class="brand"><span class="logo">▣</span> Regional Inventory HQ <span class="cn">区域库存</span></div>
   <nav id="nav">
     <a href="#dashboard" data-page="dashboard">Dashboard</a>
     <a href="#regions" data-page="regions" data-roles="HQ_ADMIN,REGION_MANAGER">Regions</a>
@@ -168,7 +168,7 @@
   <!-- REPORTS -->
   <section id="page-reports" class="page">
     <div class="page-head">
-      <div><h1>Monthly management report</h1><p class="sub">Generated automatically at 01:00 SGT on the 1st of each month for the month just closed. Inventory is rebuilt from the ledger as at month-end.</p></div>
+      <div><h1>Monthly management report</h1><p class="sub">Generated automatically at 01:00 China time (CST) on the 1st of each month for the month just closed. Inventory is rebuilt from the ledger as at month-end.</p></div>
       <form class="inline" id="genForm" data-roles="HQ_ADMIN"><input type="month" name="period" required><button type="submit">Generate now</button></form>
     </div>
     <div class="grid2">

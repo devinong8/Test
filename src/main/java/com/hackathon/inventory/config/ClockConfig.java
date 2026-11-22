@@ -11,7 +11,7 @@ import java.time.ZoneId;
 @Configuration
 public class ClockConfig {
     @Bean
-    public Clock clock(@Value("${app.zone:Asia/Singapore}") String zone) {
+    public Clock clock(@Value("${app.zone:Asia/Shanghai}") String zone) {
         return Clock.system(ZoneId.of(zone));
     }
 }

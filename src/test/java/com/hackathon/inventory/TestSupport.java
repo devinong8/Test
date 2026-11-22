@@ -17,17 +17,17 @@ import org.springframework.context.annotation.Primary;
 import java.math.BigDecimal;
 import java.time.*;
 
-/** Base class for integration tests: real Spring context, in-memory H2, clock pinned to 2026-11-22 10:00 SGT. */
+/** Base class for integration tests: real Spring context, in-memory H2, clock pinned to 2026-11-22 10:00 China Standard Time. */
 @SpringBootTest
 @Import(TestSupport.FixedClock.class)
 public abstract class TestSupport {
-    public static final ZoneId SGT = ZoneId.of("Asia/Singapore");
+    public static final ZoneId CST = ZoneId.of("Asia/Shanghai");
     public static final LocalDate TODAY = LocalDate.of(2026, 11, 22);
 
     @TestConfiguration
     public static class FixedClock {
         @Bean @Primary
-        public Clock fixedClock() { return Clock.fixed(TODAY.atTime(10, 0).atZone(SGT).toInstant(), SGT); }
+        public Clock fixedClock() { return Clock.fixed(TODAY.atTime(10, 0).atZone(CST).toInstant(), CST); }
     }
 
     @Autowired protected SkuRepository skuRepo;
@@ -53,7 +53,7 @@ public abstract class TestSupport {
 
     protected Region region(String code) {
         return regionRepo.findAll().stream().filter(r -> r.getCode().equals(code)).findFirst()
-                .orElseGet(() -> regionRepo.save(new Region(code, code + " region", "Singapore")));
+                .orElseGet(() -> regionRepo.save(new Region(code, code + " region", "Shanghai")));
     }
 
     protected Sku sku(String code, String cost, String price, String vol, int life) {
@@ -66,7 +66,7 @@ public abstract class TestSupport {
     }
 
     protected Shop shop(Region region, String code, String capacityM3, String budget) {
-        return shopRepo.save(new Shop(region, code, code + " shop", "Singapore", new BigDecimal(capacityM3), new BigDecimal(budget)));
+        return shopRepo.save(new Shop(region, code, code + " shop", "Shanghai", new BigDecimal(capacityM3), new BigDecimal(budget)));
     }
 
     public static AppUserPrincipal hq() {
@@ -82,5 +82,5 @@ public abstract class TestSupport {
                 s.getRegion().getCode(), s.getId(), s.getCode(), true);
     }
 
-    protected static Instant at(LocalDate d) { return d.atTime(12, 0).atZone(SGT).toInstant(); }
+    protected static Instant at(LocalDate d) { return d.atTime(12, 0).atZone(CST).toInstant(); }
 }

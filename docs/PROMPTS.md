@@ -48,3 +48,14 @@ Issues found while testing this iteration:
 - *MockMvc didn't surface the `XSRF-TOKEN` cookie* → the real app was checked with curl (cookie present), and the login flow is now tested over real HTTP on a random port.
 - *Loaders fired after sign-out and left a promise rejection unhandled* → routing is skipped while signed out and loader errors are caught.
 - *The Region filter showed for single-region users* → the `hidden` attribute now always wins over component `display` rules.
+
+## 6. Third iteration: China-relevant data
+
+> What data are we using? Make it realistic relatable to china
+
+The assistant explained that the seed was a synthetic Southeast-Asian dataset (SGD, Singapore time), then rebuilt it for China:
+- **Regions and cities:** 4 regional HQs (华东 Shanghai, 华南 Guangzhou, 华北 Beijing, 西南 Chengdu) and 11 cities × 3 district shops = 33 shops.
+- **Products and prices:** 20 generic Chinese convenience-store SKUs with bilingual names, priced in RMB.
+- **Locale:** Asia/Shanghai time zone, ¥ formatting with 万/亿 on chart axes, and Chinese fonts in the UI.
+- **Seasonal events:** the Mid-Autumn mooncake cycle (over-order → post-festival returns, write-offs or expired stock) and Double 11 demand.
+- **Alerts:** now ranked by value at risk, so the mooncake write-off leads the alert list.

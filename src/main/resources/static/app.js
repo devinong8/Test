@@ -9,9 +9,10 @@ const App = (() => {
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => [...el.querySelectorAll(s)];
   const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const money = v => v == null ? '–' : 'S$' + Number(v).toLocaleString('en-SG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const moneyShort = v => { v = Number(v); return Math.abs(v) >= 1e6 ? 'S$' + (v / 1e6).toFixed(2) + 'M' : Math.abs(v) >= 1e3 ? 'S$' + (v / 1e3).toFixed(1) + 'k' : 'S$' + v.toFixed(0); };
-  const num = (v, d = 0) => Number(v).toLocaleString('en-SG', { minimumFractionDigits: d, maximumFractionDigits: d });
+  const money = v => v == null ? '–' : '¥' + Number(v).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  // Chinese convention for axis labels: 万 = 10,000, 亿 = 100,000,000
+  const moneyShort = v => { v = Number(v); return Math.abs(v) >= 1e8 ? '¥' + (v / 1e8).toFixed(2) + '亿' : Math.abs(v) >= 1e4 ? '¥' + (v / 1e4).toFixed(1) + '万' : '¥' + v.toFixed(0); };
+  const num = (v, d = 0) => Number(v).toLocaleString('zh-CN', { minimumFractionDigits: d, maximumFractionDigits: d });
   const pct = v => (v * 100).toFixed(1) + '%';
   const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
   const badge = (t, cls) => `<span class="badge ${cls}">${esc(t)}</span>`;
@@ -43,7 +44,7 @@ const App = (() => {
   // ---------- chart theming ----------
   function baseOptions(extra = {}) {
     const ink2 = cssVar('--ink-2'), grid = cssVar('--grid'), muted = cssVar('--muted');
-    Chart.defaults.font.family = 'system-ui, -apple-system, "Segoe UI", sans-serif';
+    Chart.defaults.font.family = 'system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif';
     Chart.defaults.color = ink2;
     return {
       responsive: true, maintainAspectRatio: false, animation: false,
@@ -249,8 +250,8 @@ const App = (() => {
     if ($('#ledSku').value) p.set('skuId', $('#ledSku').value);
     if ($('#ledType').value) p.set('type', $('#ledType').value);
     const page = await api('/inventory/transactions?' + p);
-    $('#ledgerTable').innerHTML = `<tr><th>#</th><th>Time (SGT)</th><th>Type</th><th>Reason</th><th>Shop</th><th>SKU</th><th>Batch</th><th class="num">Qty</th><th class="num">Balance</th><th class="num">Cost</th><th>Reference</th><th>Correlation id</th></tr>` +
-      page.content.map(t => `<tr><td>${t.id}</td><td>${new Date(t.occurredAt).toLocaleString('en-SG', { timeZone: 'Asia/Singapore' })}</td><td>${t.type === 'STOCK_IN' ? '<span class="in">IN</span>' : '<span class="out">OUT</span>'}</td>
+    $('#ledgerTable').innerHTML = `<tr><th>#</th><th>Time (CST)</th><th>Type</th><th>Reason</th><th>Shop</th><th>SKU</th><th>Batch</th><th class="num">Qty</th><th class="num">Balance</th><th class="num">Cost</th><th>Reference</th><th>Correlation id</th></tr>` +
+      page.content.map(t => `<tr><td>${t.id}</td><td>${new Date(t.occurredAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })}</td><td>${t.type === 'STOCK_IN' ? '<span class="in">IN</span>' : '<span class="out">OUT</span>'}</td>
       <td>${esc(t.reason || '')}</td><td>${esc(t.shopCode)}</td><td>${esc(t.skuCode)}</td><td>${esc(t.batchNo)}</td><td class="num">${t.quantityDelta > 0 ? '+' : ''}${t.quantityDelta}</td><td class="num">${t.balanceAfter}</td>
       <td class="num">${money(t.costAmount)}</td><td>${esc(t.reference || '')}</td><td class="hint">${esc((t.correlationId || '').slice(0, 8))}</td></tr>`).join('');
     $('#ledPage').textContent = `Page ${page.number + 1} of ${Math.max(1, page.totalPages)} · ${num(page.totalElements)} entries`;
@@ -284,7 +285,7 @@ const App = (() => {
     const s = state.skus.find(x => x.id === id);
     openModal(s ? 'Edit SKU ' + s.code : 'New SKU', [
       ['code', 'Code', 'text'], ['name', 'Name', 'text'], ['category', 'Category', 'text'],
-      ['purchasePrice', 'Purchase price (S$)', 'number', 'step="0.01" min="0"'], ['salePrice', 'Sale price (S$)', 'number', 'step="0.01" min="0"'],
+      ['purchasePrice', 'Purchase price (¥)', 'number', 'step="0.01" min="0"'], ['salePrice', 'Sale price (¥)', 'number', 'step="0.01" min="0"'],
       ['unitVolumeM3', 'Unit storage volume (m³)', 'number', 'step="0.00001" min="0.00001"'], ['shelfLifeDays', 'Shelf life (days)', 'number', 'min="1"']
     ], s, async body => {
       await api(s ? '/skus/' + id : '/skus', { method: s ? 'PUT' : 'POST', body: JSON.stringify(body) });
@@ -316,7 +317,7 @@ const App = (() => {
     const regionOpts = state.regions.filter(g => g.active || g.id === s?.regionId).map(g => `<option value="${g.id}">${esc(g.code)} — ${esc(g.name)}</option>`).join('');
     openModal(s ? 'Edit shop ' + s.code : 'New shop', [
       ['regionId', 'Region', 'select', regionOpts], ['code', 'Code', 'text'], ['name', 'Name', 'text'], ['city', 'City', 'text'],
-      ['storageCapacityM3', 'Storage capacity (m³)', 'number', 'step="0.001" min="0.001"'], ['capitalBudget', 'Capital budget (S$)', 'number', 'step="0.01" min="0"']
+      ['storageCapacityM3', 'Storage capacity (m³)', 'number', 'step="0.001" min="0.001"'], ['capitalBudget', 'Capital budget (¥)', 'number', 'step="0.01" min="0"']
     ], s, async body => {
       await api(s ? '/shops/' + id : '/shops', { method: s ? 'PUT' : 'POST', body: JSON.stringify(body) });
       toast('Shop saved'); loaders.shops();
@@ -357,7 +358,7 @@ const App = (() => {
     o3.scales.y.ticks.callback = v => moneyShort(v);
     o3.plugins.tooltip.callbacks = { label: c => { const r = reports[c.dataIndex]; return [`Provision ${money(c.raw)}`, `High-risk cost ${money(r.highCost)}`, `Expired cost ${money(r.expiredCost)}`]; } };
     const codes = [...new Set(reports.flatMap(r => r.regions.map(g => g.regionCode)))].sort();
-    const series = ['--s1', '--s2', '--s3'];
+    const series = ['--s1', '--s2', '--s3', '--s4'];   // fixed palette order; >4 regions would fold into 'Other'
     const o4 = baseOptions(); o4.scales.y.ticks.callback = v => moneyShort(v);
     o4.plugins.tooltip.callbacks = { label: c => `${c.dataset.label}: ${money(c.raw)}` };
     chart('regionTrend', { type: 'line', data: { labels, datasets: codes.map((code, i) => line(code,
@@ -371,7 +372,7 @@ const App = (() => {
         const mom = prev ? (r.totalCostValue - prev.totalCostValue) / (prev.totalCostValue || 1) : null;
         return `<tr class="clickable" data-p="${r.period}"><td><b>${r.period}</b></td><td>${r.asOfDate}</td><td>${esc(r.trigger)}</td><td class="num">${money(r.totalCostValue)}</td>
         <td class="num">${mom == null ? '–' : (mom >= 0 ? '▲ ' : '▼ ') + pct(Math.abs(mom))}</td><td class="num">${money(r.totalRetailValue)}</td><td class="num">${money(r.totalCogs30d)}</td>
-        <td class="num">${num(r.turnoverRate, 2)}×</td><td class="num">${money(r.totalProvision)}</td><td class="num">${money(r.netRealisableCost)}</td><td>${new Date(r.generatedAt).toLocaleString('en-SG', { timeZone: 'Asia/Singapore' })}</td></tr>`;
+        <td class="num">${num(r.turnoverRate, 2)}×</td><td class="num">${money(r.totalProvision)}</td><td class="num">${money(r.netRealisableCost)}</td><td>${new Date(r.generatedAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })}</td></tr>`;
       }).join('');
     $$('#reportTable tr[data-p]').forEach(tr => tr.onclick = () => showReport(tr.dataset.p));
     if (rev.length && $('#reportDetail').hidden) showReport(rev[0].period);

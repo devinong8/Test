@@ -20,7 +20,7 @@ class InventoryFormulasTest {
 
     @Test
     void cogs30dIsVelocityTimes30TimesPurchasePrice() {
-        // 4.5 units/day x 30 days x S$2.40 = S$324.00
+        // 4.5 units/day x 30 days x ¥2.40 = ¥324.00
         assertThat(InventoryFormulas.cogs30d(new BigDecimal("4.5"), new BigDecimal("2.40"))).isEqualByComparingTo("324.00");
     }
 

@@ -5,7 +5,7 @@ spring:
     hibernate:
       ddl-auto: create-drop
 app:
-  zone: Asia/Singapore
+  zone: Asia/Shanghai
   seed:
     enabled: false
   report:

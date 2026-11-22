@@ -85,12 +85,12 @@ public class AnalyticsService {
         for (BatchRisk b : pm.batches()) {
             if (b.tier() == RiskTier.EXPIRED)
                 alerts.add(new Alert("CRITICAL", "EXPIRED", b.shopId(), b.shopCode(), b.skuId(), b.skuCode(),
-                        String.format("%d units of batch %s expired %s ago - write off (provision S$%s)",
-                                b.onHandQty(), b.batchNo(), days(-b.daysToExpiry()), b.provision()), null));
+                        String.format("%d units of batch %s expired %s ago - write off (provision ¥%s)",
+                                b.onHandQty(), b.batchNo(), days(-b.daysToExpiry()), b.provision()), null, b.costValue()));
             else if (b.tier() == RiskTier.HIGH)
                 alerts.add(new Alert("HIGH", "EXPIRING", b.shopId(), b.shopCode(), b.skuId(), b.skuCode(),
                         String.format("%d units of batch %s %s (R_dep %.2f) - markdown / transfer",
-                                b.onHandQty(), b.batchNo(), b.daysToExpiry() == 0 ? "expire today" : "expire in " + days(b.daysToExpiry()), b.rDep()), null));
+                                b.onHandQty(), b.batchNo(), b.daysToExpiry() == 0 ? "expire today" : "expire in " + days(b.daysToExpiry()), b.rDep()), null, b.costValue()));
         }
 
         Map<Long, ShopMetrics> shopMetrics = pm.shops().stream()
@@ -127,7 +127,10 @@ public class AnalyticsService {
                         String.format("Capital budget %.1f%% used", s.budgetUtilisation() * 100), null));
         }
         List<String> order = List.of("CRITICAL", "HIGH", "MEDIUM", "LOW");
-        alerts.sort(Comparator.comparing((Alert a) -> order.indexOf(a.severity())).thenComparing(Alert::shopCode));
+        // most severe first; within a severity, the most money at stake first
+        alerts.sort(Comparator.comparing((Alert a) -> order.indexOf(a.severity()))
+                .thenComparing(Alert::valueAtRisk, Comparator.nullsLast(Comparator.reverseOrder()))
+                .thenComparing(Alert::shopCode));
         return alerts;
     }
 

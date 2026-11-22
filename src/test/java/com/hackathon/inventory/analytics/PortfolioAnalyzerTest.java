@@ -27,7 +27,7 @@ class PortfolioAnalyzerTest {
     static final com.hackathon.inventory.domain.Region REGION = region(7, "R1");
 
     static com.hackathon.inventory.domain.Region region(long id, String code) {
-        var r = new com.hackathon.inventory.domain.Region(code, "Region " + code, "Singapore");
+        var r = new com.hackathon.inventory.domain.Region(code, "Region " + code, "Shanghai");
         ReflectionTestUtils.setField(r, "id", id);
         return r;
     }

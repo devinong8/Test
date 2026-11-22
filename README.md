@@ -1,6 +1,6 @@
 # Product Inventory Management — Hackathon BE2
 
-Regional HQ system that manages product inventory for 24 shops across 6 cities in 2 regions. It covers regions, SKU and shop master data, Stock-In / Stock-Out with storage and capital-budget limits, batch-level depreciation risk, and an automated **Monthly Management Report** with trends. Access is role-based: group HQ, regional HQ and shop manager.
+Regional HQ system that manages product inventory for a China convenience-store chain: **33 shops across 11 cities in 4 regions**, priced in RMB (¥) and running on China Standard Time. It covers regions, SKU and shop master data, Stock-In / Stock-Out with storage and capital-budget limits, batch-level depreciation risk, and an automated **Monthly Management Report** with trends. Access is role-based: group HQ, regional HQ and shop manager.
 
 **Stack:** Java 21 · Spring Boot 3.4 (Web, Data JPA, Validation, Security, Actuator, Scheduling) · H2 (file DB; JPA makes it swappable for Postgres) · Micrometer/Prometheus · vanilla JS + Chart.js front end (bundled locally, works offline).
 
@@ -19,7 +19,25 @@ mvn spring-boot:run              # or: mvn package && java -jar target/inventory
 open http://localhost:8080       # UI
 ```
 
-On first start against an empty DB, `DataSeeder` creates 2 regions, 20 SKUs, 24 shops and 5 demo users, then simulates about 7 months of receipts, sales, damage and expiry write-offs (~20k ledger entries) **through the real `InventoryService`**, so every business rule is applied. It then back-fills 6 monthly reports so the trend view has history. This takes about 20 seconds once. To reset, delete `./data/`. **Delete it when upgrading from a build without regions**, because the schema changed. To turn seeding off, set `app.seed.enabled=false`.
+On first start against an empty DB, `DataSeeder` builds the China demo dataset described in **Demo data** below and simulates about 7 months of trading through the real `InventoryService`, so every business rule is applied. It then back-fills 6 monthly reports so the trend view has history. This takes about 40 seconds, once. To reset, delete `./data/`. **Delete it when upgrading from an older build**, because the schema and data changed. To turn seeding off, set `app.seed.enabled=false`.
+
+### Demo data
+
+The data is **synthetic but modelled on a Chinese convenience-store / community-supermarket chain**. It is generated deterministically (fixed random seed), so every run gives the same numbers.
+
+| | |
+|---|---|
+| **Regions (regional HQs)** | 华东 East China (HQ 上海 Shanghai) · 华南 South China (HQ 广州 Guangzhou) · 华北 North China (HQ 北京 Beijing) · 西南 Southwest (HQ 成都 Chengdu) |
+| **Cities → shops** | Shanghai, Hangzhou, Nanjing, Suzhou · Guangzhou, Shenzhen, Dongguan · Beijing, Tianjin · Chengdu, Chongqing. Three shops per city, named by district (e.g. `SH-01 静安店 Jing'an`, `SZ-02 南山店 Nanshan`, `CD-02 高新店 Hi-tech Zone`) |
+| **SKUs (20, generic, no brands)** | 鲜牛奶 fresh milk (7-day life), 鲜肉包 pork buns (3 days), 嫩豆腐 tofu, 鲜鸡蛋 eggs, 东北大米 Northeast rice, 花生油 peanut oil, 方便面 instant noodles, 生抽 soy sauce, 辣椒油 chili crisp, 无糖乌龙茶 sugar-free oolong, 饮用水 bottled water, 白酒 baijiu (10-year life, ¥268), 速冻水饺 frozen dumplings, 汤圆 tangyuan, 瓜子 sunflower seeds, **月饼礼盒 mooncake gift box** (60-day life), 抽纸 tissues, 洗衣液 laundry liquid, 牙膏 toothpaste, 常温酸奶 ambient yogurt |
+| **Prices** | RMB at typical tier-1 city shelf prices, with 35–50% gross margin. Charts use 万 / 亿 units |
+| **Shop limits** | Storage m³ and capital budget sized from each shop's expected working stock; about a quarter of shops are deliberately tight |
+| **Timeline** | About 7 months to "yesterday". Restocking cycles match shelf life (buns every 2 days, rice every 2 weeks), plus occasional damage, expiry write-offs and bulk "promo" buys of long-life goods |
+
+**Built-in China retail events** (so the analytics have something real to find):
+- **中秋 Mid-Autumn Festival (25 Sep 2026):** every shop stocks up on mooncake gift boxes from 6 weeks out, often over-ordering. Demand stops dead on the day. About 30% of shops return leftovers to the supplier, 30% write them off once they expire, and the rest still hold them. Result: **¥52.6k of expired mooncakes, about 81% of the group's depreciation provision**. Inventory value peaks in August, and mooncakes are the top CRITICAL alerts.
+- **双十一 Double 11 (1–11 Nov):** demand for tissues, laundry liquid, toothpaste and bottled water rises about 1.7×.
+- Fresh food (milk, buns, tofu) produces the steady stream of small EXPIRED / EXPIRING alerts any real store has.
 
 ### Demo logins
 
@@ -28,9 +46,11 @@ All seeded accounts use the password `demo1234` (set by `app.seed.demo-password`
 | Username | Role | Sees and manages |
 |---|---|---|
 | `hq.admin` | **Group HQ** (`HQ_ADMIN`) | Everything. The only role that can edit regions and the SKU catalogue and run the monthly batch |
-| `rhq.maritime` | **Regional HQ** (`REGION_MANAGER`), Singapore | Region SEA-MARITIME (SG, KL, JK, MN: 16 shops): its shops, limits, velocities, stock, reports |
-| `rhq.mainland` | **Regional HQ** (`REGION_MANAGER`), Bangkok | Region SEA-MAINLAND (BK, HC: 8 shops) |
-| `shop.sg01` / `shop.bk01` | **Shop manager** (`SHOP_MANAGER`) | One shop: dashboard, inventory, stock in/out, ledger, alerts. Read-only master data, no reports |
+| `rhq.east` | **Regional HQ** (`REGION_MANAGER`), 华东 East China, Shanghai | Its 12 shops: shops, limits, velocities, stock, reports |
+| `rhq.south` | Regional HQ, 华南 South China, Guangzhou | Its 9 shops |
+| `rhq.north` | Regional HQ, 华北 North China, Beijing | Its 6 shops |
+| `rhq.sw` | Regional HQ, 西南 Southwest China, Chengdu | Its 6 shops |
+| `shop.sh01` / `shop.gz01` | **Shop manager** (`SHOP_MANAGER`): 上海静安店 / 广州天河店 | One shop: dashboard, inventory, stock in/out, ledger, alerts. Read-only master data, no reports |
 
 For a real deployment with seeding off, set `APP_SECURITY_BOOTSTRAP_ADMIN_PASSWORD` to create the first `hq.admin` on an empty database.
 
@@ -54,7 +74,7 @@ node e2e/screenshots.js           # with the app running: browser e2e + regenera
 | `LoginFlowHttpTest` (1) | The browser's real HTTP flow on a random port: XSRF cookie → bad password 401 → login → HttpOnly session cookie → API → logout → 401 |
 | `e2e/screenshots.js` (23 checks) | Real browser, signed in as each role: sign-in screen and bad password; the shop manager's single-shop view with no Reports/Regions tabs; the regional HQ's region-only dashboard and report; group HQ dashboard, regions, tier filter, stock-in, oversell rejected, ledger, ≥ 6-month trend, dark theme, phone width, zero console errors |
 
-Tests run against an in-memory DB with the clock fixed to `2026-11-22 10:00 SGT`, so they are deterministic.
+Tests run against an in-memory DB with the clock fixed to `2026-11-22 10:00` China Standard Time, so they are deterministic.
 
 ---
 
@@ -88,7 +108,7 @@ flowchart LR
       INV["InventoryService<br/>limits · FEFO · row locks"]
       ANS["AnalyticsService<br/>alerts · reorder"]
       RS["ReportService<br/>ledger replay as-of month-end"]
-      SCH["ReportScheduler<br/>cron 0 0 1 1 * * (SGT)"]
+      SCH["ReportScheduler<br/>cron 0 0 1 1 * * (Asia/Shanghai)"]
     end
     CORE["analytics core (pure Java)<br/>InventoryFormulas · PortfolioAnalyzer"]
     EH["GlobalExceptionHandler<br/>RFC 7807 problem+json"]
@@ -137,7 +157,7 @@ erDiagram
 4. **Concurrency safety.** Stock-out takes `PESSIMISTIC_WRITE` locks on candidate batches (`SELECT … FOR UPDATE`), with `@Version` optimistic locking as a backstop (409 `CONCURRENT_UPDATE`). This is covered by a 12-thread test.
 5. **Rules are checked before any write.** Capacity, budget, expired-on-arrival and insufficient stock are validated first. Failures return 422 with machine-readable `details` (for example `maxAcceptableQty`), and the UI shows them.
 6. **Money uses `BigDecimal`** (scale 2, HALF_UP). Ratios use `double`.
-7. **Time is injected through `Clock`** in Asia/Singapore, which makes tests deterministic and keeps the cron in SGT.
+7. **Time is injected through `Clock`** in Asia/Shanghai (CST, UTC+8), which makes tests deterministic and runs the cron on China time.
 8. **Security in two layers.** Roles are checked with `@PreAuthorize` (for example, only group HQ edits SKUs). Row-level scope is enforced by `AccessScope` in every controller, covering reads, writes, analytics, ledger, reports and CSV. Report totals are **re-aggregated from the visible lines**, so a regional HQ never sees group totals.
 9. **SPA auth done properly.** Session cookie (`HttpOnly`, `SameSite=Lax`), session-id rotation on login, CSRF via the `XSRF-TOKEN` cookie plus `X-XSRF-TOKEN` header (token rotated on login), bcrypt passwords, and JSON 401/403 problem responses instead of browser pop-ups.
 

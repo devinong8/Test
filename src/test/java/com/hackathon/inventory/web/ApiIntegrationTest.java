@@ -57,8 +57,8 @@ class ApiIntegrationTest extends TestSupport {
     void shopCrudAndLimitsCannotDropBelowUsage() throws Exception {
         Long regionId = region("SEA").getId();
         mvc.perform(post("/api/shops").contentType(MediaType.APPLICATION_JSON).content("""
-                {"regionId":%d,"code":"sg-09","name":"Orchard","city":"Singapore","storageCapacityM3":5,"capitalBudget":1000}""".formatted(regionId)))
-                .andExpect(status().isCreated()).andExpect(jsonPath("$.code").value("SG-09"))
+                {"regionId":%d,"code":"sh-09","name":"Jingan","city":"Shanghai","storageCapacityM3":5,"capitalBudget":1000}""".formatted(regionId)))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.code").value("SH-09"))
                 .andExpect(jsonPath("$.storageUtilisation").value(0.0));
         Shop shop = shopRepo.findAll().get(0);
         Sku sku = sku("RICE", "10.00", "15.00", "0.01", 365);
@@ -66,7 +66,7 @@ class ApiIntegrationTest extends TestSupport {
                         "{\"shopId\":%d,\"skuId\":%d,\"quantity\":50,\"batchProductionDate\":\"2026-11-01\"}".formatted(shop.getId(), sku.getId())))
                 .andExpect(status().isOk());
         mvc.perform(put("/api/shops/" + shop.getId()).contentType(MediaType.APPLICATION_JSON).content("""
-                {"regionId":%d,"code":"SG-09","name":"Orchard","city":"Singapore","storageCapacityM3":5,"capitalBudget":100}""".formatted(regionId)))
+                {"regionId":%d,"code":"SH-09","name":"Jingan","city":"Shanghai","storageCapacityM3":5,"capitalBudget":100}""".formatted(regionId)))
                 .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.code").value("BUDGET_BELOW_USAGE"));
         mvc.perform(delete("/api/shops/" + shop.getId()))
                 .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.code").value("SHOP_HAS_STOCK"));
@@ -76,7 +76,7 @@ class ApiIntegrationTest extends TestSupport {
 
     @Test
     void stockMovementsLedgerAnalyticsAndObservability() throws Exception {
-        Shop shop = shop("SG-01", "10", "10000");
+        Shop shop = shop("SH-01", "10", "10000");
         Sku milk = sku("MILK", "2.00", "3.50", "0.001", 14);
         mvc.perform(put("/api/shops/%d/velocities/%d".formatted(shop.getId(), milk.getId()))
                         .contentType(MediaType.APPLICATION_JSON).content("{\"dailySalesVelocity\":5}"))
@@ -127,12 +127,12 @@ class ApiIntegrationTest extends TestSupport {
 
         mvc.perform(post("/api/reports/generate").param("period", "2026-11"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.trigger").value("MANUAL"));
-        mvc.perform(get("/api/reports/2026-11")).andExpect(jsonPath("$.lines[0].shopCode").value("SG-01"))
+        mvc.perform(get("/api/reports/2026-11")).andExpect(jsonPath("$.lines[0].shopCode").value("SH-01"))
                 .andExpect(jsonPath("$.report.regions[0].regionCode").value("R-DEFAULT"))
                 .andExpect(jsonPath("$.report.totalCostValue").value(140.0));
         mvc.perform(get("/api/reports/2026-11/csv"))
                 .andExpect(content().contentTypeCompatibleWith("text/csv"))
-                .andExpect(content().string(containsString("2026-11,R-DEFAULT,SG-01")));
+                .andExpect(content().string(containsString("2026-11,R-DEFAULT,SH-01")));
         mvc.perform(get("/api/reports/not-a-month")).andExpect(status().isBadRequest());
 
         mvc.perform(get("/actuator/health")).andExpect(jsonPath("$.status").value("UP"));

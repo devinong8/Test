@@ -17,7 +17,7 @@ public class ReportScheduler {
 
     public ReportScheduler(ReportService reports, Clock clock) { this.reports = reports; this.clock = clock; }
 
-    @Scheduled(cron = "${app.report.cron}", zone = "${app.zone:Asia/Singapore}")
+    @Scheduled(cron = "${app.report.cron}", zone = "${app.zone:Asia/Shanghai}")
     public void generatePreviousMonth() {
         YearMonth period = YearMonth.now(clock).minusMonths(1);
         log.info("Scheduled monthly report batch starting for {}", period);

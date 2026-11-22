@@ -2,15 +2,17 @@
 
 | Min | Topic | Show |
 |---|---|---|
-| 0–1 | Problem and scope: 2 regional HQs, 24 shops, 6 cities, 20 SKUs; the 3 acceptance criteria all delivered | README table |
+| 0–1 | Problem and scope: a China chain with 4 regional HQs (华东/华南/华北/西南), 33 shops in 11 cities, 20 SKUs in RMB; the 3 acceptance criteria all delivered | README table and Demo data |
 | 1–3 | Architecture: layered Spring Boot; **Region → Shop → Batch** model; **immutable signed ledger**; one pure calculation engine shared by dashboard and batch; security layer (roles + row scope) | README Mermaid diagrams |
-| 3–5 | Live demo as `hq.admin`: Regional HQ breakdown and region filter, then Dashboard KPIs (V<sub>cost</sub>, V<sub>retail</sub>, COGS, turnover, provision), tier bar, alerts. Click **Reorder** → Stock-In pre-filled, with headroom shown | UI |
+| 3–5 | Live demo as `hq.admin`: Regional HQ breakdown (Southwest turns slowest, 1.97×), region filter, the top CRITICAL alerts are expired 月饼 mooncakes (≈81% of the ¥65k provision), then Dashboard KPIs (V<sub>cost</sub>, V<sub>retail</sub>, COGS, turnover, provision), tier bar, alerts. Click **Reorder** → Stock-In pre-filled, with headroom shown | UI |
 | 5–6 | Rules demo: oversell → 422 `INSUFFICIENT_STOCK`; over capacity → `STORAGE_CAPACITY_EXCEEDED` with `maxAcceptableQty`; selling expired stock is blocked; FEFO allocation shown in the result | Stock In / Out tab, Ledger tab |
-| 6–8 | Monthly report: cron `0 0 1 1 * *` SGT → `ReportService` replays the ledger to month-end, so any closed month can be regenerated. Trend charts, MoM, CSV | Reports tab |
+| 6–8 | Monthly report: cron `0 0 1 1 * *` China time → `ReportService` replays the ledger to month-end, so any closed month can be regenerated. Trend charts, MoM, CSV. **Story:** value peaks in August (mooncake stock-up), then the October/November provision jumps as unsold mooncakes expire | Reports tab |
 | 8–9 | Quality: 42 JUnit tests (tier boundaries, hand-computed example, 12-thread no-oversell test, API contract, role/scope security suite, real-HTTP login flow) + 23 browser checks | `mvn test` output |
-| 9–10 | Roles in 30 seconds: sign out → `shop.sg01` (one shop, no Reports tab) → `rhq.mainland` (region only). Then observability and next steps | Sign-in screen, `/actuator/prometheus` |
+| 9–10 | Roles in 30 seconds: sign out → `shop.sh01` 上海静安店 (one shop, no Reports tab) → `rhq.south` 华南 (region only). Then observability and next steps | Sign-in screen, `/actuator/prometheus` |
 
 ## Likely reviewer questions
+
+- **Is the data real?** It's synthetic but modelled on a Chinese convenience chain: real cities and districts, generic products at typical RMB shelf prices, realistic shelf lives, and real calendar events (Mid-Autumn and Double 11). It's generated deterministically through the real service layer, so every business rule was applied to it.
 
 - **Where is the Regional HQ in the model?** `Region` is an entity (code, name, HQ city) and every shop belongs to one. Regional subtotals appear on the dashboard, the Regions page and the monthly report. A `REGION_MANAGER` user *is* the regional HQ: it manages its region's shops and sees only its region's data. Group HQ owns the shared SKU catalogue and the monthly batch.
 - **Is the scoping only in the UI?** No. Every controller filters through `AccessScope` on the server, and report totals are re-aggregated from the lines the caller may see. `SecurityIntegrationTest` hits the API directly as each role and asserts 403s and filtered totals.
