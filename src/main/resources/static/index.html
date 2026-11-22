@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Regional Inventory HQ</title>
+  <link rel="stylesheet" href="app.css">
+  <script src="vendor/chart.umd.min.js"></script>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><span class="logo">▣</span> Regional Inventory HQ</div>
+  <nav id="nav">
+    <a href="#dashboard" data-page="dashboard">Dashboard</a>
+    <a href="#inventory" data-page="inventory">Inventory</a>
+    <a href="#movements" data-page="movements">Stock In / Out</a>
+    <a href="#ledger" data-page="ledger">Ledger</a>
+    <a href="#skus" data-page="skus">SKUs</a>
+    <a href="#shops" data-page="shops">Shops</a>
+    <a href="#reports" data-page="reports">Monthly Reports</a>
+  </nav>
+  <button id="themeToggle" class="ghost" title="Toggle theme" aria-label="Toggle theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor"/></svg></button>
+</header>
+
+<main>
+  <!-- DASHBOARD -->
+  <section id="page-dashboard" class="page">
+    <div class="page-head">
+      <div><h1>Portfolio overview</h1><p class="sub" id="asOf"></p></div>
+      <button class="ghost" onclick="App.loadDashboard()">Refresh</button>
+    </div>
+    <div class="tiles" id="kpiTiles"></div>
+    <div class="grid2">
+      <div class="card">
+        <h3>Inventory cost by depreciation risk</h3>
+        <p class="hint">Share of purchase-cost value in each R<sub>dep</sub> tier, with the provision each tier attracts.</p>
+        <div id="tierBar" class="tierbar"></div>
+        <table class="mini" id="tierTable"></table>
+      </div>
+      <div class="card">
+        <h3>Alerts <span class="count" id="alertCount"></span></h3>
+        <div class="alert-filter" id="alertFilter"></div>
+        <div id="alerts" class="alerts"></div>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Monthly turnover rate by shop</h3>
+      <p class="hint">COGS<sub>30d</sub> ÷ (V<sub>cost</sub> + ε). Higher means stock converts to sales faster.</p>
+      <div class="chart-box tall"><canvas id="turnoverChart"></canvas></div>
+    </div>
+    <div class="card">
+      <h3>Storage and capital budget utilisation</h3>
+      <p class="hint">Share of each shop's storage capacity (m³) and capital budget currently in use.</p>
+      <div class="chart-box tall"><canvas id="utilChart"></canvas></div>
+    </div>
+    <div class="card">
+      <h3>Shop breakdown</h3>
+      <div class="table-wrap"><table id="shopTable" class="data"></table></div>
+    </div>
+  </section>
+
+  <!-- INVENTORY -->
+  <section id="page-inventory" class="page">
+    <div class="page-head">
+      <div><h1>Stock on hand by batch</h1><p class="sub">Each batch carries its own shelf-life consumption ratio and valuation provision.</p></div>
+    </div>
+    <div class="filters">
+      <label>Shop <select id="invShop"></select></label>
+      <label>Risk tier <select id="invTier">
+        <option value="">All</option><option>NORMAL</option><option>MODERATE</option><option>HIGH</option><option>EXPIRED</option>
+      </select></label>
+      <label>Search <input id="invSearch" placeholder="SKU or batch"></label>
+    </div>
+    <div class="card"><div class="table-wrap"><table id="batchTable" class="data"></table></div></div>
+  </section>
+
+  <!-- MOVEMENTS -->
+  <section id="page-movements" class="page">
+    <div class="page-head"><div><h1>Stock movements</h1><p class="sub">Stock-in checks storage and budget limits. Stock-out allocates first-expired-first-out and blocks selling expired stock.</p></div></div>
+    <div class="grid2">
+      <form class="card form" id="stockInForm">
+        <h3>Stock-In</h3>
+        <label>Shop <select name="shopId" class="shopSelect" required></select></label>
+        <label>SKU <select name="skuId" class="skuSelect" required></select></label>
+        <p class="hint" id="headroom"></p>
+        <label>Quantity <input name="quantity" type="number" min="1" required></label>
+        <label>Batch production date <input name="batchProductionDate" type="date" required></label>
+        <label>Batch no. (optional) <input name="batchNo" placeholder="auto: SKU-YYYYMMDD"></label>
+        <label>Reference <input name="reference" placeholder="PO number"></label>
+        <button type="submit">Receive stock</button>
+        <div class="result" id="stockInResult"></div>
+      </form>
+      <form class="card form" id="stockOutForm">
+        <h3>Stock-Out</h3>
+        <label>Shop <select name="shopId" class="shopSelect" required></select></label>
+        <label>SKU <select name="skuId" class="skuSelect" required></select></label>
+        <label>Quantity <input name="quantity" type="number" min="1" required></label>
+        <label>Reason <select name="reason">
+          <option>SALE</option><option>DAMAGE</option><option>EXPIRED_WRITE_OFF</option>
+          <option>TRANSFER_OUT</option><option>RETURN_TO_SUPPLIER</option><option>STOCKTAKE_ADJUSTMENT</option>
+        </select></label>
+        <label>Specific batch (optional) <select name="batchId" id="outBatch"><option value="">FEFO auto-allocate</option></select></label>
+        <label>Reference <input name="reference" placeholder="POS / ticket"></label>
+        <button type="submit">Issue stock</button>
+        <div class="result" id="stockOutResult"></div>
+      </form>
+    </div>
+  </section>
+
+  <!-- LEDGER -->
+  <section id="page-ledger" class="page">
+    <div class="page-head"><div><h1>Transaction ledger</h1><p class="sub">An immutable audit trail. Each entry carries the correlation id of the request that created it.</p></div></div>
+    <div class="filters">
+      <label>Shop <select id="ledShop"></select></label>
+      <label>SKU <select id="ledSku"></select></label>
+      <label>Type <select id="ledType"><option value="">All</option><option>STOCK_IN</option><option>STOCK_OUT</option></select></label>
+    </div>
+    <div class="card">
+      <div class="table-wrap"><table id="ledgerTable" class="data"></table></div>
+      <div class="pager"><button class="ghost" id="ledPrev">‹ Prev</button><span id="ledPage"></span><button class="ghost" id="ledNext">Next ›</button></div>
+    </div>
+  </section>
+
+  <!-- SKUS -->
+  <section id="page-skus" class="page">
+    <div class="page-head"><div><h1>SKU master</h1></div><button onclick="App.editSku()">+ New SKU</button></div>
+    <div class="card"><div class="table-wrap"><table id="skuTable" class="data"></table></div></div>
+  </section>
+
+  <!-- SHOPS -->
+  <section id="page-shops" class="page">
+    <div class="page-head"><div><h1>Shop master</h1></div><button onclick="App.editShop()">+ New Shop</button></div>
+    <div class="card"><div class="table-wrap"><table id="shopMasterTable" class="data"></table></div></div>
+    <div class="card" id="velocityCard" hidden>
+      <h3 id="velocityTitle">Sales velocity</h3>
+      <p class="hint">Historical daily sales velocity per SKU. This drives COGS<sub>30d</sub>, turnover and days-of-cover.</p>
+      <form class="inline" id="velocityForm">
+        <select name="skuId" class="skuSelect"></select>
+        <input name="dailySalesVelocity" type="number" step="0.1" min="0" placeholder="units / day" required>
+        <button type="submit">Set velocity</button>
+      </form>
+      <div class="table-wrap"><table id="velocityTable" class="data"></table></div>
+    </div>
+  </section>
+
+  <!-- REPORTS -->
+  <section id="page-reports" class="page">
+    <div class="page-head">
+      <div><h1>Monthly management report</h1><p class="sub">Generated automatically at 01:00 SGT on the 1st of each month for the month just closed. Inventory is rebuilt from the ledger as at month-end.</p></div>
+      <form class="inline" id="genForm"><input type="month" name="period" required><button type="submit">Generate now</button></form>
+    </div>
+    <div class="grid2">
+      <div class="card"><h3>Inventory valuation trend</h3><p class="hint">Purchase-cost value, retail potential and net realisable cost at each month-end.</p><div class="chart-box"><canvas id="valTrend"></canvas></div></div>
+      <div class="card"><h3>Regional turnover rate trend</h3><p class="hint">Monthly COGS<sub>30d</sub> ÷ V<sub>cost</sub> across all shops.</p><div class="chart-box"><canvas id="turnTrend"></canvas></div></div>
+    </div>
+    <div class="card"><h3>Depreciation provision trend</h3><p class="hint">Valuation provision booked against purchase cost at each month-end.</p><div class="chart-box"><canvas id="provTrend"></canvas></div></div>
+    <div class="card">
+      <div class="row-between"><h3>Report history</h3></div>
+      <div class="table-wrap"><table id="reportTable" class="data"></table></div>
+    </div>
+    <div class="card" id="reportDetail" hidden>
+      <div class="row-between"><h3 id="reportDetailTitle"></h3><a id="csvLink" class="btn ghost" href="#">Download CSV</a></div>
+      <div class="table-wrap"><table id="reportLines" class="data"></table></div>
+    </div>
+  </section>
+</main>
+
+<dialog id="modal"><form method="dialog" id="modalForm" class="form"></form></dialog>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+<script src="app.js"></script>
+</body>
+</html>

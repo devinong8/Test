@@ -1,0 +1,380 @@
+/* Regional Inventory HQ - single page front end (vanilla JS + Chart.js) */
+const App = (() => {
+  const state = { shops: [], skus: [], alerts: [], alertFilter: 'ALL', ledgerPage: 0, charts: {}, velocityShop: null };
+  const TIERS = ['NORMAL', 'MODERATE', 'HIGH', 'EXPIRED'];
+  const TIER_VAR = { NORMAL: '--good', MODERATE: '--warning', HIGH: '--serious', EXPIRED: '--critical' };
+  const TIER_RATE = { NORMAL: '0%', MODERATE: '25%', HIGH: '60%', EXPIRED: '100%' };
+
+  // ---------- helpers ----------
+  const $ = (s, el = document) => el.querySelector(s);
+  const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+  const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const money = v => v == null ? '–' : 'S$' + Number(v).toLocaleString('en-SG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const moneyShort = v => { v = Number(v); return Math.abs(v) >= 1e6 ? 'S$' + (v / 1e6).toFixed(2) + 'M' : Math.abs(v) >= 1e3 ? 'S$' + (v / 1e3).toFixed(1) + 'k' : 'S$' + v.toFixed(0); };
+  const num = (v, d = 0) => Number(v).toLocaleString('en-SG', { minimumFractionDigits: d, maximumFractionDigits: d });
+  const pct = v => (v * 100).toFixed(1) + '%';
+  const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const badge = (t, cls) => `<span class="badge ${cls}">${esc(t)}</span>`;
+  const meter = v => `<span class="meter ${v >= 0.9 ? 'hot' : ''}"><i style="width:${Math.min(100, v * 100)}%"></i></span>${pct(v)}`;
+
+  async function api(path, opts = {}) {
+    const res = await fetch('/api' + path, { headers: { 'Content-Type': 'application/json' }, ...opts });
+    const text = await res.text();
+    const body = text && (res.headers.get('content-type') || '').includes('json') ? JSON.parse(text) : text;
+    if (!res.ok) { const err = new Error(body?.detail || res.statusText); err.body = body; throw err; }
+    return body;
+  }
+  function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 2600); }
+  function errorHtml(e) {
+    const b = e.body || {};
+    let extra = '';
+    if (b.details) extra = '<ul>' + Object.entries(b.details).map(([k, v]) => `<li>${esc(k)}: <b>${esc(v)}</b></li>`).join('') + '</ul>';
+    if (b.errors) extra = '<ul>' + Object.entries(b.errors).map(([k, v]) => `<li>${esc(k)}: ${esc(v)}</li>`).join('') + '</ul>';
+    return `<div class="err"><b>${esc(b.code || 'Error')}</b> — ${esc(e.message)}${extra}</div>`;
+  }
+  const formData = form => Object.fromEntries([...new FormData(form)].map(([k, v]) => [k, v === '' ? null : v]));
+
+  // ---------- chart theming ----------
+  function baseOptions(extra = {}) {
+    const ink2 = cssVar('--ink-2'), grid = cssVar('--grid'), muted = cssVar('--muted');
+    Chart.defaults.font.family = 'system-ui, -apple-system, "Segoe UI", sans-serif';
+    Chart.defaults.color = ink2;
+    return {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'top', align: 'start', labels: { boxWidth: 10, boxHeight: 10, useBorderRadius: true, borderRadius: 3 } },
+        tooltip: { backgroundColor: cssVar('--surface'), titleColor: cssVar('--ink'), bodyColor: ink2, borderColor: cssVar('--axis'), borderWidth: 1, padding: 10, boxPadding: 4 }
+      },
+      scales: {
+        x: { grid: { display: false }, border: { color: cssVar('--axis') }, ticks: { color: muted } },
+        y: { grid: { color: grid }, border: { display: false }, ticks: { color: muted }, beginAtZero: true }
+      },
+      ...extra
+    };
+  }
+  function chart(id, config) {
+    state.charts[id]?.destroy();
+    state.charts[id] = new Chart(document.getElementById(id), config);
+  }
+
+  // ---------- routing ----------
+  const loaders = {};
+  function route() {
+    const page = (location.hash || '#dashboard').slice(1);
+    $$('.page').forEach(p => p.classList.toggle('active', p.id === 'page-' + page));
+    $$('#nav a').forEach(a => a.classList.toggle('active', a.dataset.page === page));
+    (loaders[page] || (() => {}))();
+  }
+
+  async function loadMaster() {
+    [state.shops, state.skus] = await Promise.all([api('/shops'), api('/skus')]);
+    const shopOpts = state.shops.filter(s => s.active).map(s => `<option value="${s.id}">${esc(s.code)} — ${esc(s.name)}</option>`).join('');
+    const skuOpts = state.skus.filter(s => s.active).map(s => `<option value="${s.id}">${esc(s.code)} — ${esc(s.name)}</option>`).join('');
+    $$('.shopSelect').forEach(el => { const v = el.value; el.innerHTML = shopOpts; if (v) el.value = v; });
+    $$('.skuSelect').forEach(el => { const v = el.value; el.innerHTML = skuOpts; if (v) el.value = v; });
+    for (const id of ['invShop', 'ledShop']) { const el = $('#' + id); const v = el.value; el.innerHTML = '<option value="">All shops</option>' + shopOpts; el.value = v; }
+    const ls = $('#ledSku'); const v = ls.value; ls.innerHTML = '<option value="">All SKUs</option>' + skuOpts; ls.value = v;
+  }
+
+  // ---------- dashboard ----------
+  loaders.dashboard = async function loadDashboard() {
+    const [pm, alerts] = await Promise.all([api('/analytics/portfolio'), api('/analytics/alerts')]);
+    $('#asOf').textContent = `Live valuation as of ${pm.asOfDate} · ${pm.shops.length} shops · ${num(pm.units)} units on hand`;
+    const tiles = [
+      ['Purchase cost value (V<sub>cost</sub>)', money(pm.costValue), 'Σ on-hand × purchase price'],
+      ['Retail potential (V<sub>retail</sub>)', money(pm.retailValue), 'Σ on-hand × sale price'],
+      ['Potential gross margin', money(pm.potentialGrossMargin), pct(pm.potentialGrossMargin / (pm.retailValue || 1)) + ' of retail'],
+      ['COGS (30 days)', money(pm.cogs30d), 'velocity × 30 × purchase price'],
+      ['Turnover rate (monthly)', num(pm.turnoverRate, 2) + '×', '≈ ' + num(30 / (pm.turnoverRate || 1e-6), 1) + ' days of stock'],
+      ['Depreciation provision', money(pm.provision), pct(pm.provision / (pm.costValue || 1)) + ' of cost'],
+      ['Net realisable cost', money(pm.netRealisableCost), 'V<sub>cost</sub> − provision']
+    ];
+    $('#kpiTiles').innerHTML = tiles.map(([l, v, n]) => `<div class="tile"><div class="label">${l}</div><div class="value">${v}</div><div class="note">${n}</div></div>`).join('');
+
+    // tier composition (status colours, always labelled)
+    const total = TIERS.reduce((a, t) => a + Number(pm.costByTier[t] || 0), 0) || 1;
+    $('#tierBar').innerHTML = TIERS.map(t => {
+      const v = Number(pm.costByTier[t] || 0);
+      return v > 0 ? `<div title="${t}: ${money(v)} (${pct(v / total)})" style="flex:${v};background:var(${TIER_VAR[t]})"></div>` : '';
+    }).join('');
+    $('#tierTable').innerHTML = '<tr><th>Tier</th><th>R<sub>dep</sub></th><th class="num">Cost value</th><th class="num">Share</th><th class="num">Provision rate</th></tr>' +
+      TIERS.map((t, i) => `<tr><td><span class="swatch" style="background:var(${TIER_VAR[t]})"></span>${t}</td><td>${['&lt; 0.60', '0.60 – 0.85', '0.85 – 1.00', '&gt; 1.00'][i]}</td>
+      <td class="num">${money(pm.costByTier[t])}</td><td class="num">${pct(Number(pm.costByTier[t]) / total)}</td><td class="num">${TIER_RATE[t]}</td></tr>`).join('');
+
+    state.alerts = alerts;
+    renderAlerts();
+
+    const byTurnover = [...pm.shops].sort((a, b) => b.turnoverRate - a.turnoverRate);
+    chart('turnoverChart', {
+      type: 'bar',
+      data: { labels: byTurnover.map(s => s.shopCode), datasets: [{ label: 'Turnover rate', data: byTurnover.map(s => +s.turnoverRate.toFixed(3)), backgroundColor: cssVar('--s1'), borderRadius: 4, borderSkipped: 'bottom', maxBarThickness: 28 }] },
+      options: baseOptions({ plugins: { ...baseOptions().plugins, legend: { display: false }, tooltip: { ...baseOptions().plugins.tooltip, callbacks: { label: c => { const s = byTurnover[c.dataIndex]; return [`Turnover ${c.raw.toFixed(2)}×`, `COGS30d ${money(s.cogs30d)}`, `V_cost ${money(s.costValue)}`]; } } } } })
+    });
+    const shops = [...pm.shops].sort((a, b) => a.shopCode.localeCompare(b.shopCode));
+    const opts = baseOptions();
+    opts.scales.y.max = 1; opts.scales.y.ticks.callback = v => (v * 100) + '%';
+    opts.plugins.tooltip.callbacks = { label: c => `${c.dataset.label}: ${pct(c.raw)}` };
+    chart('utilChart', {
+      type: 'bar',
+      data: { labels: shops.map(s => s.shopCode), datasets: [
+        { label: 'Storage used', data: shops.map(s => s.storageUtilisation), backgroundColor: cssVar('--s1'), borderRadius: 4, borderSkipped: 'bottom', maxBarThickness: 16 },
+        { label: 'Capital budget used', data: shops.map(s => s.budgetUtilisation), backgroundColor: cssVar('--s2'), borderRadius: 4, borderSkipped: 'bottom', maxBarThickness: 16 }
+      ] },
+      options: opts
+    });
+
+    $('#shopTable').innerHTML = `<tr><th>Shop</th><th>City</th><th class="num">Units</th><th class="num">V<sub>cost</sub></th><th class="num">V<sub>retail</sub></th><th class="num">COGS 30d</th><th class="num">Turnover</th><th class="num">Provision</th><th class="num">Net realisable</th><th>Storage</th><th>Budget</th></tr>` +
+      shops.map(s => `<tr><td><b>${esc(s.shopCode)}</b> ${esc(s.shopName)}</td><td>${esc(s.city)}</td><td class="num">${num(s.units)}</td><td class="num">${money(s.costValue)}</td><td class="num">${money(s.retailValue)}</td>
+        <td class="num">${money(s.cogs30d)}</td><td class="num">${num(s.turnoverRate, 2)}×</td><td class="num">${money(s.provision)}</td><td class="num">${money(s.netRealisableCost)}</td>
+        <td>${meter(s.storageUtilisation)}</td><td>${meter(s.budgetUtilisation)}</td></tr>`).join('');
+  };
+
+  function renderAlerts() {
+    const types = ['ALL', ...new Set(state.alerts.map(a => a.type))];
+    $('#alertFilter').innerHTML = types.map(t => `<button class="chip ${t === state.alertFilter ? 'on' : ''}" data-t="${esc(t)}">${esc(t.replace(/_/g, ' ').toLowerCase())}</button>`).join('');
+    $$('#alertFilter .chip').forEach(b => b.onclick = () => { state.alertFilter = b.dataset.t; renderAlerts(); });
+    const list = state.alerts.filter(a => state.alertFilter === 'ALL' || a.type === state.alertFilter);
+    $('#alertCount').textContent = `(${list.length})`;
+    $('#alerts').innerHTML = list.map(a => `<div class="alert">${badge(a.severity, 'sev-' + a.severity)}
+      <div><div class="who">${esc(a.shopCode)}${a.skuCode ? ' · ' + esc(a.skuCode) : ''} <span class="count">${esc(a.type.replace(/_/g, ' '))}</span></div><div class="msg">${esc(a.message)}</div></div>
+      <div>${a.suggestedQty ? `<button class="small ghost" data-shop="${a.shopId}" data-sku="${a.skuId}" data-qty="${a.suggestedQty}">Reorder ${a.suggestedQty}</button>` : ''}</div></div>`).join('') || '<p class="hint">No alerts.</p>';
+    $$('#alerts button[data-qty]').forEach(b => b.onclick = () => {
+      location.hash = '#movements';
+      setTimeout(() => {
+        const f = $('#stockInForm'); f.shopId.value = b.dataset.shop; f.skuId.value = b.dataset.sku; f.quantity.value = b.dataset.qty;
+        f.batchProductionDate.value = new Date().toISOString().slice(0, 10); updateHeadroom();
+      }, 50);
+    });
+  }
+
+  // ---------- inventory ----------
+  let batchCache = [];
+  loaders.inventory = async () => {
+    const shopId = $('#invShop').value;
+    batchCache = await api('/inventory/batches' + (shopId ? '?shopId=' + shopId : ''));
+    renderBatches();
+  };
+  function renderBatches() {
+    const tier = $('#invTier').value, q = $('#invSearch').value.trim().toLowerCase();
+    const rows = batchCache.filter(b => (!tier || b.tier === tier) && (!q || (b.skuCode + b.skuName + b.batchNo).toLowerCase().includes(q)));
+    $('#batchTable').innerHTML = `<tr><th>Shop</th><th>SKU</th><th>Batch</th><th>Produced</th><th>Expires</th><th class="num">Elapsed / life</th><th class="num">R<sub>dep</sub></th><th>Tier</th><th class="num">On hand</th><th class="num">Cost value</th><th class="num">Retail value</th><th class="num">Provision</th></tr>` +
+      rows.slice(0, 1000).map(b => `<tr><td>${esc(b.shopCode)}</td><td><b>${esc(b.skuCode)}</b> ${esc(b.skuName)}</td><td>${esc(b.batchNo)}</td><td>${b.productionDate}</td><td>${b.expiryDate}</td>
+      <td class="num">${b.elapsedDays} / ${b.shelfLifeDays}d</td><td class="num">${b.rDep.toFixed(3)}</td><td>${badge(b.tier, 't-' + b.tier)}</td><td class="num">${num(b.onHandQty)}</td>
+      <td class="num">${money(b.costValue)}</td><td class="num">${money(b.retailValue)}</td><td class="num">${money(b.provision)}</td></tr>`).join('') +
+      (rows.length > 1000 ? `<tr><td colspan="12" class="hint">Showing first 1000 of ${rows.length} batches. Filter to narrow down.</td></tr>` : '');
+  }
+
+  // ---------- movements ----------
+  async function updateHeadroom() {
+    const f = $('#stockInForm');
+    if (!f.shopId.value || !f.skuId.value) return;
+    try {
+      const h = await api(`/inventory/headroom?shopId=${f.shopId.value}&skuId=${f.skuId.value}`);
+      $('#headroom').textContent = `This shop can receive up to ${num(h.maxReceivableQty)} more units of this SKU within its storage and budget limits.`;
+    } catch (e) { $('#headroom').textContent = ''; }
+  }
+  async function updateOutBatches() {
+    const f = $('#stockOutForm');
+    if (!f.shopId.value) return;
+    const list = (await api('/inventory/batches?shopId=' + f.shopId.value)).filter(b => String(b.skuId) === f.skuId.value);
+    $('#outBatch').innerHTML = '<option value="">FEFO auto-allocate</option>' + list.map(b => `<option value="${b.batchId}">${esc(b.batchNo)} · ${b.onHandQty} units · ${b.tier}</option>`).join('');
+  }
+  function movementResult(r, verb) {
+    return `<div class="ok"><b>${verb}</b>. On-hand balance is now <b>${num(r.onHandAfter)}</b>.<ul>` +
+      r.transactions.map(t => `<li>#${t.id} ${esc(t.batchNo)}: ${t.quantityDelta > 0 ? '+' : ''}${t.quantityDelta} → ${t.balanceAfter}</li>`).join('') +
+      r.warnings.map(w => `<li>⚠ ${esc(w)}</li>`).join('') + '</ul></div>';
+  }
+  loaders.movements = () => { updateHeadroom(); updateOutBatches(); };
+
+  // ---------- ledger ----------
+  loaders.ledger = async () => {
+    const p = new URLSearchParams({ page: state.ledgerPage, size: 50 });
+    if ($('#ledShop').value) p.set('shopId', $('#ledShop').value);
+    if ($('#ledSku').value) p.set('skuId', $('#ledSku').value);
+    if ($('#ledType').value) p.set('type', $('#ledType').value);
+    const page = await api('/inventory/transactions?' + p);
+    $('#ledgerTable').innerHTML = `<tr><th>#</th><th>Time (SGT)</th><th>Type</th><th>Reason</th><th>Shop</th><th>SKU</th><th>Batch</th><th class="num">Qty</th><th class="num">Balance</th><th class="num">Cost</th><th>Reference</th><th>Correlation id</th></tr>` +
+      page.content.map(t => `<tr><td>${t.id}</td><td>${new Date(t.occurredAt).toLocaleString('en-SG', { timeZone: 'Asia/Singapore' })}</td><td>${t.type === 'STOCK_IN' ? '<span class="in">IN</span>' : '<span class="out">OUT</span>'}</td>
+      <td>${esc(t.reason || '')}</td><td>${esc(t.shopCode)}</td><td>${esc(t.skuCode)}</td><td>${esc(t.batchNo)}</td><td class="num">${t.quantityDelta > 0 ? '+' : ''}${t.quantityDelta}</td><td class="num">${t.balanceAfter}</td>
+      <td class="num">${money(t.costAmount)}</td><td>${esc(t.reference || '')}</td><td class="hint">${esc((t.correlationId || '').slice(0, 8))}</td></tr>`).join('');
+    $('#ledPage').textContent = `Page ${page.number + 1} of ${Math.max(1, page.totalPages)} · ${num(page.totalElements)} entries`;
+    $('#ledPrev').disabled = page.first; $('#ledNext').disabled = page.last;
+  };
+
+  // ---------- SKUs ----------
+  loaders.skus = async () => {
+    await loadMaster();
+    $('#skuTable').innerHTML = `<tr><th>Code</th><th>Name</th><th>Category</th><th class="num">Purchase</th><th class="num">Sale</th><th class="num">Margin</th><th class="num">Volume m³</th><th class="num">Shelf life</th><th>Status</th><th></th></tr>` +
+      state.skus.map(s => `<tr class="${s.active ? '' : 'inactive'}"><td><b>${esc(s.code)}</b></td><td>${esc(s.name)}</td><td>${esc(s.category)}</td><td class="num">${money(s.purchasePrice)}</td><td class="num">${money(s.salePrice)}</td>
+      <td class="num">${pct((s.salePrice - s.purchasePrice) / (s.salePrice || 1))}</td><td class="num">${s.unitVolumeM3}</td><td class="num">${s.shelfLifeDays}d</td><td>${s.active ? 'Active' : 'Inactive'}</td>
+      <td><button class="small ghost" onclick="App.editSku(${s.id})">Edit</button> ${s.active ? `<button class="small ghost" onclick="App.toggleSku(${s.id}, false)">Deactivate</button>` : `<button class="small ghost" onclick="App.toggleSku(${s.id}, true)">Activate</button>`}</td></tr>`).join('');
+  };
+  function openModal(title, fields, values, onSubmit) {
+    const f = $('#modalForm');
+    f.innerHTML = `<h3>${esc(title)}</h3>` + fields.map(([name, label, type, extra]) => `<label>${esc(label)} <input name="${name}" type="${type}" ${extra || ''} value="${esc(values?.[name] ?? '')}" required></label>`).join('') +
+      `<div class="result" id="modalResult"></div><div class="actions"><button type="button" class="ghost" id="modalCancel">Cancel</button><button type="submit">Save</button></div>`;
+    $('#modalCancel').onclick = () => $('#modal').close();
+    f.onsubmit = async ev => {
+      ev.preventDefault();
+      try { await onSubmit(formData(f)); $('#modal').close(); }
+      catch (e) { $('#modalResult').innerHTML = errorHtml(e); }
+    };
+    $('#modal').showModal();
+  }
+  function editSku(id) {
+    const s = state.skus.find(x => x.id === id);
+    openModal(s ? 'Edit SKU ' + s.code : 'New SKU', [
+      ['code', 'Code', 'text'], ['name', 'Name', 'text'], ['category', 'Category', 'text'],
+      ['purchasePrice', 'Purchase price (S$)', 'number', 'step="0.01" min="0"'], ['salePrice', 'Sale price (S$)', 'number', 'step="0.01" min="0"'],
+      ['unitVolumeM3', 'Unit storage volume (m³)', 'number', 'step="0.00001" min="0.00001"'], ['shelfLifeDays', 'Shelf life (days)', 'number', 'min="1"']
+    ], s, async body => {
+      await api(s ? '/skus/' + id : '/skus', { method: s ? 'PUT' : 'POST', body: JSON.stringify(body) });
+      toast('SKU saved'); loaders.skus();
+    });
+  }
+  async function toggleSku(id, on) {
+    try { await api(on ? `/skus/${id}/activate` : `/skus/${id}`, { method: on ? 'POST' : 'DELETE' }); toast('SKU updated'); loaders.skus(); }
+    catch (e) { toast(e.message); }
+  }
+
+  // ---------- Shops ----------
+  loaders.shops = async () => {
+    await loadMaster();
+    $('#shopMasterTable').innerHTML = `<tr><th>Code</th><th>Name</th><th>City</th><th class="num">Capacity m³</th><th class="num">Budget</th><th>Storage used</th><th>Budget used</th><th>Status</th><th></th></tr>` +
+      state.shops.map(s => `<tr class="clickable ${s.active ? '' : 'inactive'}" data-id="${s.id}"><td><b>${esc(s.code)}</b></td><td>${esc(s.name)}</td><td>${esc(s.city)}</td><td class="num">${num(s.storageCapacityM3, 3)}</td><td class="num">${money(s.capitalBudget)}</td>
+      <td>${meter(s.storageUtilisation)}</td><td>${meter(s.budgetUtilisation)}</td><td>${s.active ? 'Active' : 'Inactive'}</td>
+      <td><button class="small ghost" data-edit="${s.id}">Edit</button> <button class="small ghost" data-toggle="${s.id}">${s.active ? 'Deactivate' : 'Activate'}</button></td></tr>`).join('');
+    $$('#shopMasterTable tr[data-id]').forEach(tr => tr.onclick = ev => {
+      if (ev.target.dataset.edit) return editShop(+ev.target.dataset.edit);
+      if (ev.target.dataset.toggle) return toggleShop(+ev.target.dataset.toggle);
+      showVelocities(+tr.dataset.id);
+    });
+    if (state.velocityShop) showVelocities(state.velocityShop);
+  };
+  function editShop(id) {
+    const s = state.shops.find(x => x.id === id);
+    openModal(s ? 'Edit shop ' + s.code : 'New shop', [
+      ['code', 'Code', 'text'], ['name', 'Name', 'text'], ['city', 'City', 'text'],
+      ['storageCapacityM3', 'Storage capacity (m³)', 'number', 'step="0.001" min="0.001"'], ['capitalBudget', 'Capital budget (S$)', 'number', 'step="0.01" min="0"']
+    ], s, async body => {
+      await api(s ? '/shops/' + id : '/shops', { method: s ? 'PUT' : 'POST', body: JSON.stringify(body) });
+      toast('Shop saved'); loaders.shops();
+    });
+  }
+  async function toggleShop(id) {
+    const s = state.shops.find(x => x.id === id);
+    try { await api(s.active ? `/shops/${id}` : `/shops/${id}/activate`, { method: s.active ? 'DELETE' : 'POST' }); toast('Shop updated'); loaders.shops(); }
+    catch (e) { toast(e.message); }
+  }
+  async function showVelocities(shopId) {
+    state.velocityShop = shopId;
+    const s = state.shops.find(x => x.id === shopId);
+    const list = await api(`/shops/${shopId}/velocities`);
+    $('#velocityCard').hidden = false;
+    $('#velocityTitle').textContent = `Sales velocity · ${s.code} ${s.name}`;
+    $('#velocityTable').innerHTML = `<tr><th>SKU</th><th class="num">Daily velocity</th><th class="num">On hand</th><th class="num">Days of cover</th></tr>` +
+      list.map(v => `<tr><td><b>${esc(v.skuCode)}</b> ${esc(v.skuName)}</td><td class="num">${num(v.dailySalesVelocity, 1)}</td><td class="num">${num(v.onHandQty)}</td><td class="num">${v.daysOfCover == null ? '–' : num(v.daysOfCover, 1)}</td></tr>`).join('');
+  }
+
+  // ---------- Reports ----------
+  loaders.reports = async () => {
+    const reports = await api('/reports');
+    const labels = reports.map(r => r.period);
+    const o1 = baseOptions();
+    o1.scales.y.ticks.callback = v => moneyShort(v);
+    o1.plugins.tooltip.callbacks = { label: c => `${c.dataset.label}: ${money(c.raw)}` };
+    const line = (label, data, color) => ({ label, data, borderColor: color, backgroundColor: color, borderWidth: 2, pointRadius: 4, pointHoverRadius: 6, tension: 0.25 });
+    chart('valTrend', { type: 'line', data: { labels, datasets: [
+      line('Retail potential', reports.map(r => r.totalRetailValue), cssVar('--s2')),
+      line('Purchase cost', reports.map(r => r.totalCostValue), cssVar('--s1')),
+      line('Net realisable cost', reports.map(r => r.netRealisableCost), cssVar('--s3'))
+    ] }, options: o1 });
+    const o2 = baseOptions({}); o2.plugins.legend = { display: false };
+    o2.plugins.tooltip.callbacks = { label: c => `Turnover ${c.raw.toFixed(2)}×` };
+    chart('turnTrend', { type: 'line', data: { labels, datasets: [line('Turnover rate', reports.map(r => +r.turnoverRate.toFixed(3)), cssVar('--s1'))] }, options: o2 });
+    const o3 = baseOptions(); o3.plugins.legend = { display: false };
+    o3.scales.y.ticks.callback = v => moneyShort(v);
+    o3.plugins.tooltip.callbacks = { label: c => { const r = reports[c.dataIndex]; return [`Provision ${money(c.raw)}`, `High-risk cost ${money(r.highCost)}`, `Expired cost ${money(r.expiredCost)}`]; } };
+    chart('provTrend', { type: 'bar', data: { labels, datasets: [{ label: 'Provision', data: reports.map(r => r.totalProvision), backgroundColor: cssVar('--s1'), borderRadius: 4, borderSkipped: 'bottom', maxBarThickness: 40 }] }, options: o3 });
+
+    const rev = [...reports].reverse();
+    $('#reportTable').innerHTML = `<tr><th>Period</th><th>As of</th><th>Trigger</th><th class="num">V<sub>cost</sub></th><th class="num">MoM</th><th class="num">V<sub>retail</sub></th><th class="num">COGS 30d</th><th class="num">Turnover</th><th class="num">Provision</th><th class="num">Net realisable</th><th>Generated</th></tr>` +
+      rev.map((r, i) => {
+        const prev = rev[i + 1];
+        const mom = prev ? (r.totalCostValue - prev.totalCostValue) / (prev.totalCostValue || 1) : null;
+        return `<tr class="clickable" data-p="${r.period}"><td><b>${r.period}</b></td><td>${r.asOfDate}</td><td>${esc(r.trigger)}</td><td class="num">${money(r.totalCostValue)}</td>
+        <td class="num">${mom == null ? '–' : (mom >= 0 ? '▲ ' : '▼ ') + pct(Math.abs(mom))}</td><td class="num">${money(r.totalRetailValue)}</td><td class="num">${money(r.totalCogs30d)}</td>
+        <td class="num">${num(r.turnoverRate, 2)}×</td><td class="num">${money(r.totalProvision)}</td><td class="num">${money(r.netRealisableCost)}</td><td>${new Date(r.generatedAt).toLocaleString('en-SG', { timeZone: 'Asia/Singapore' })}</td></tr>`;
+      }).join('');
+    $$('#reportTable tr[data-p]').forEach(tr => tr.onclick = () => showReport(tr.dataset.p));
+    if (rev.length && $('#reportDetail').hidden) showReport(rev[0].period);
+  };
+  async function showReport(period) {
+    const { report, lines } = await api('/reports/' + period);
+    $('#reportDetail').hidden = false;
+    $('#reportDetailTitle').textContent = `Report ${report.period} · as of ${report.asOfDate} · ${report.shopCount} shops`;
+    $('#csvLink').href = `/api/reports/${period}/csv`;
+    $('#reportLines').innerHTML = `<tr><th>Shop</th><th>City</th><th class="num">V<sub>cost</sub></th><th class="num">V<sub>retail</sub></th><th class="num">COGS 30d</th><th class="num">Turnover</th><th class="num">Provision</th><th class="num">High-risk cost</th><th class="num">Expired cost</th><th>Storage</th><th>Budget</th></tr>` +
+      lines.map(l => `<tr><td><b>${esc(l.shopCode)}</b> ${esc(l.shopName)}</td><td>${esc(l.city)}</td><td class="num">${money(l.costValue)}</td><td class="num">${money(l.retailValue)}</td><td class="num">${money(l.cogs30d)}</td>
+      <td class="num">${num(l.turnoverRate, 2)}×</td><td class="num">${money(l.provision)}</td><td class="num">${money(l.highRiskCost)}</td><td class="num">${money(l.expiredCost)}</td><td>${meter(l.storageUtilisation)}</td><td>${meter(l.budgetUtilisation)}</td></tr>`).join('');
+  }
+
+  // ---------- wiring ----------
+  function wire() {
+    $('#invShop').onchange = loaders.inventory;
+    $('#invTier').onchange = renderBatches;
+    $('#invSearch').oninput = renderBatches;
+    for (const id of ['ledShop', 'ledSku', 'ledType']) $('#' + id).onchange = () => { state.ledgerPage = 0; loaders.ledger(); };
+    $('#ledPrev').onclick = () => { state.ledgerPage--; loaders.ledger(); };
+    $('#ledNext').onclick = () => { state.ledgerPage++; loaders.ledger(); };
+
+    const inF = $('#stockInForm'), outF = $('#stockOutForm');
+    inF.shopId.onchange = inF.skuId.onchange = updateHeadroom;
+    outF.shopId.onchange = outF.skuId.onchange = updateOutBatches;
+    inF.batchProductionDate.max = new Date().toISOString().slice(0, 10);
+    inF.onsubmit = async ev => {
+      ev.preventDefault();
+      try { const r = await api('/inventory/stock-in', { method: 'POST', body: JSON.stringify(formData(inF)) }); $('#stockInResult').innerHTML = movementResult(r, 'Stock received'); updateHeadroom(); updateOutBatches(); }
+      catch (e) { $('#stockInResult').innerHTML = errorHtml(e); }
+    };
+    outF.onsubmit = async ev => {
+      ev.preventDefault();
+      try { const r = await api('/inventory/stock-out', { method: 'POST', body: JSON.stringify(formData(outF)) }); $('#stockOutResult').innerHTML = movementResult(r, 'Stock issued'); updateOutBatches(); updateHeadroom(); }
+      catch (e) { $('#stockOutResult').innerHTML = errorHtml(e); }
+    };
+    $('#velocityForm').onsubmit = async ev => {
+      ev.preventDefault();
+      const d = formData(ev.target);
+      try { await api(`/shops/${state.velocityShop}/velocities/${d.skuId}`, { method: 'PUT', body: JSON.stringify({ dailySalesVelocity: d.dailySalesVelocity }) }); toast('Velocity saved'); showVelocities(state.velocityShop); }
+      catch (e) { toast(e.message); }
+    };
+    const gen = $('#genForm');
+    const lastMonth = new Date(); lastMonth.setDate(1); lastMonth.setMonth(lastMonth.getMonth() - 1);
+    gen.period.value = lastMonth.toISOString().slice(0, 7);
+    gen.onsubmit = async ev => {
+      ev.preventDefault();
+      try { await api('/reports/generate?period=' + gen.period.value, { method: 'POST' }); toast('Report ' + gen.period.value + ' generated'); $('#reportDetail').hidden = true; loaders.reports(); }
+      catch (e) { toast(e.message); }
+    };
+    $('#themeToggle').onclick = () => {
+      const dark = document.documentElement.dataset.theme ? document.documentElement.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+      document.documentElement.dataset.theme = dark ? 'light' : 'dark';
+      try { localStorage.setItem('theme', document.documentElement.dataset.theme); } catch (e) {}
+      route();
+    };
+    try { const t = localStorage.getItem('theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+    window.addEventListener('hashchange', route);
+  }
+
+  async function init() {
+    wire();
+    await loadMaster();
+    const today = new Date().toISOString().slice(0, 10);
+    $('#stockInForm').batchProductionDate.value = today;
+    route();
+  }
+  document.addEventListener('DOMContentLoaded', init);
+
+  return { loadDashboard: () => loaders.dashboard(), editSku, toggleSku, editShop };
+})();
