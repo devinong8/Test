@@ -198,8 +198,10 @@ public class InventoryService {
     }
 
     @Transactional(readOnly = true)
-    public Page<TransactionView> ledger(Long shopId, Long skuId, TransactionType type, int page, int size) {
-        return txns.search(shopId, skuId, type, PageRequest.of(page, Math.min(size, 500),
+    public Page<TransactionView> ledger(Set<Long> shopIds, Long skuId, TransactionType type, int page, int size) {
+        boolean all = shopIds == null;
+        Collection<Long> ids = all || shopIds.isEmpty() ? List.of(-1L) : shopIds;
+        return txns.search(all, ids, skuId, type, PageRequest.of(page, Math.min(size, 500),
                 Sort.by(Sort.Direction.DESC, "occurredAt", "id"))).map(TransactionView::of);
     }
 

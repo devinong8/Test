@@ -3,19 +3,32 @@ package com.hackathon.inventory.web;
 import com.hackathon.inventory.TestSupport;
 import com.hackathon.inventory.domain.Shop;
 import com.hackathon.inventory.domain.Sku;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.context.WebApplicationContext;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.hamcrest.Matchers.*;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@AutoConfigureMockMvc
 class ApiIntegrationTest extends TestSupport {
-    @Autowired MockMvc mvc;
+    @Autowired WebApplicationContext ctx;
+    MockMvc mvc;
+
+    /** All calls in this class run as group HQ with a valid CSRF token (role scoping is in SecurityIntegrationTest). */
+    @BeforeEach
+    void asHq() {
+        mvc = MockMvcBuilders.webAppContextSetup(ctx).addFilters(ctx.getBean(com.hackathon.inventory.config.CorrelationIdFilter.class))
+                .apply(springSecurity())
+                .defaultRequest(get("/").with(user(hq())).with(csrf())).build();
+    }
     @Autowired io.micrometer.core.instrument.MeterRegistry meters;
 
     @Test
@@ -42,8 +55,9 @@ class ApiIntegrationTest extends TestSupport {
 
     @Test
     void shopCrudAndLimitsCannotDropBelowUsage() throws Exception {
+        Long regionId = region("SEA").getId();
         mvc.perform(post("/api/shops").contentType(MediaType.APPLICATION_JSON).content("""
-                {"code":"sg-09","name":"Orchard","city":"Singapore","storageCapacityM3":5,"capitalBudget":1000}"""))
+                {"regionId":%d,"code":"sg-09","name":"Orchard","city":"Singapore","storageCapacityM3":5,"capitalBudget":1000}""".formatted(regionId)))
                 .andExpect(status().isCreated()).andExpect(jsonPath("$.code").value("SG-09"))
                 .andExpect(jsonPath("$.storageUtilisation").value(0.0));
         Shop shop = shopRepo.findAll().get(0);
@@ -52,7 +66,7 @@ class ApiIntegrationTest extends TestSupport {
                         "{\"shopId\":%d,\"skuId\":%d,\"quantity\":50,\"batchProductionDate\":\"2026-11-01\"}".formatted(shop.getId(), sku.getId())))
                 .andExpect(status().isOk());
         mvc.perform(put("/api/shops/" + shop.getId()).contentType(MediaType.APPLICATION_JSON).content("""
-                {"code":"SG-09","name":"Orchard","city":"Singapore","storageCapacityM3":5,"capitalBudget":100}"""))
+                {"regionId":%d,"code":"SG-09","name":"Orchard","city":"Singapore","storageCapacityM3":5,"capitalBudget":100}""".formatted(regionId)))
                 .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.code").value("BUDGET_BELOW_USAGE"));
         mvc.perform(delete("/api/shops/" + shop.getId()))
                 .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.code").value("SHOP_HAS_STOCK"));
@@ -102,7 +116,8 @@ class ApiIntegrationTest extends TestSupport {
                 .andExpect(jsonPath("$.retailValue").value(245.0))
                 .andExpect(jsonPath("$.cogs30d").value(300.0))
                 .andExpect(jsonPath("$.turnoverRate").value(closeTo(300.0 / 140.0, 1e-6)))
-                .andExpect(jsonPath("$.batches", hasSize(0)));
+                .andExpect(jsonPath("$.batches", hasSize(0)))
+                .andExpect(jsonPath("$.regions[0].costValue").value(140.0));
         mvc.perform(get("/api/inventory/batches"))
                 .andExpect(jsonPath("$[0].tier").value("NORMAL"))
                 .andExpect(jsonPath("$[0].elapsedDays").value(2));
@@ -112,10 +127,12 @@ class ApiIntegrationTest extends TestSupport {
 
         mvc.perform(post("/api/reports/generate").param("period", "2026-11"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.trigger").value("MANUAL"));
-        mvc.perform(get("/api/reports/2026-11")).andExpect(jsonPath("$.lines[0].shopCode").value("SG-01"));
+        mvc.perform(get("/api/reports/2026-11")).andExpect(jsonPath("$.lines[0].shopCode").value("SG-01"))
+                .andExpect(jsonPath("$.report.regions[0].regionCode").value("R-DEFAULT"))
+                .andExpect(jsonPath("$.report.totalCostValue").value(140.0));
         mvc.perform(get("/api/reports/2026-11/csv"))
                 .andExpect(content().contentTypeCompatibleWith("text/csv"))
-                .andExpect(content().string(containsString("2026-11,SG-01")));
+                .andExpect(content().string(containsString("2026-11,R-DEFAULT,SG-01")));
         mvc.perform(get("/api/reports/not-a-month")).andExpect(status().isBadRequest());
 
         mvc.perform(get("/actuator/health")).andExpect(jsonPath("$.status").value("UP"));

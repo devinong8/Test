@@ -1,6 +1,6 @@
 /* Regional Inventory HQ - single page front end (vanilla JS + Chart.js) */
 const App = (() => {
-  const state = { shops: [], skus: [], alerts: [], alertFilter: 'ALL', ledgerPage: 0, charts: {}, velocityShop: null };
+  const state = { me: null, regions: [], shops: [], skus: [], alerts: [], alertFilter: 'ALL', ledgerPage: 0, charts: {}, velocityShop: null };
   const TIERS = ['NORMAL', 'MODERATE', 'HIGH', 'EXPIRED'];
   const TIER_VAR = { NORMAL: '--good', MODERATE: '--warning', HIGH: '--serious', EXPIRED: '--critical' };
   const TIER_RATE = { NORMAL: '0%', MODERATE: '25%', HIGH: '60%', EXPIRED: '100%' };
@@ -17,8 +17,14 @@ const App = (() => {
   const badge = (t, cls) => `<span class="badge ${cls}">${esc(t)}</span>`;
   const meter = v => `<span class="meter ${v >= 0.9 ? 'hot' : ''}"><i style="width:${Math.min(100, v * 100)}%"></i></span>${pct(v)}`;
 
+  const ROLE_LABEL = { HQ_ADMIN: 'Group HQ', REGION_MANAGER: 'Regional HQ', SHOP_MANAGER: 'Shop manager' };
+  const csrfToken = () => (document.cookie.match(/(?:^|; )XSRF-TOKEN=([^;]*)/) || [])[1];
   async function api(path, opts = {}) {
-    const res = await fetch('/api' + path, { headers: { 'Content-Type': 'application/json' }, ...opts });
+    const headers = { 'Content-Type': 'application/json' };
+    const method = (opts.method || 'GET').toUpperCase();
+    if (method !== 'GET' && csrfToken()) headers['X-XSRF-TOKEN'] = decodeURIComponent(csrfToken());
+    const res = await fetch('/api' + path, { ...opts, headers, credentials: 'same-origin' });
+    if (res.status === 401 && !path.startsWith('/auth/')) { showLogin(); throw new Error('Please sign in'); }
     const text = await res.text();
     const body = text && (res.headers.get('content-type') || '').includes('json') ? JSON.parse(text) : text;
     if (!res.ok) { const err = new Error(body?.detail || res.statusText); err.body = body; throw err; }
@@ -60,15 +66,29 @@ const App = (() => {
 
   // ---------- routing ----------
   const loaders = {};
+  const can = (...roles) => state.me && roles.includes(state.me.role);
+  function applyRoles() {
+    $$('[data-roles]').forEach(el => {
+      const ok = state.me && el.dataset.roles.split(',').includes(state.me.role);
+      if (ok) el.removeAttribute('data-hidden-by-role'); else el.setAttribute('data-hidden-by-role', '');
+    });
+  }
   function route() {
-    const page = (location.hash || '#dashboard').slice(1);
+    let page = (location.hash || '#dashboard').slice(1);
+    const link = $(`#nav a[data-page="${page}"]`);
+    if (!link || link.hasAttribute('data-hidden-by-role')) page = 'dashboard';
     $$('.page').forEach(p => p.classList.toggle('active', p.id === 'page-' + page));
     $$('#nav a').forEach(a => a.classList.toggle('active', a.dataset.page === page));
-    (loaders[page] || (() => {}))();
+    if (!state.me) return;                       // signed out: the login overlay is showing
+    Promise.resolve((loaders[page] || (() => {}))()).catch(e => { if (state.me) toast(e.message); });
   }
 
   async function loadMaster() {
-    [state.shops, state.skus] = await Promise.all([api('/shops'), api('/skus')]);
+    [state.regions, state.shops, state.skus] = await Promise.all([api('/regions'), api('/shops'), api('/skus')]);
+    const rf = $('#regionFilter'), rv = rf.value;
+    rf.innerHTML = '<option value="">All regions</option>' + state.regions.map(r => `<option value="${r.id}">${esc(r.code)} — ${esc(r.name)}</option>`).join('');
+    rf.value = rv;
+    $('#regionFilterWrap').hidden = state.regions.length < 2;
     const shopOpts = state.shops.filter(s => s.active).map(s => `<option value="${s.id}">${esc(s.code)} — ${esc(s.name)}</option>`).join('');
     const skuOpts = state.skus.filter(s => s.active).map(s => `<option value="${s.id}">${esc(s.code)} — ${esc(s.name)}</option>`).join('');
     $$('.shopSelect').forEach(el => { const v = el.value; el.innerHTML = shopOpts; if (v) el.value = v; });
@@ -79,8 +99,14 @@ const App = (() => {
 
   // ---------- dashboard ----------
   loaders.dashboard = async function loadDashboard() {
-    const [pm, alerts] = await Promise.all([api('/analytics/portfolio'), api('/analytics/alerts')]);
-    $('#asOf').textContent = `Live valuation as of ${pm.asOfDate} · ${pm.shops.length} shops · ${num(pm.units)} units on hand`;
+    const rq = $('#regionFilter').value ? '?regionId=' + $('#regionFilter').value : '';
+    const [pm, alerts] = await Promise.all([api('/analytics/portfolio' + rq), api('/analytics/alerts' + rq)]);
+    const me = state.me;
+    $('#dashTitle').textContent = me.role === 'SHOP_MANAGER' ? `Shop overview · ${me.shopCode}`
+      : me.role === 'REGION_MANAGER' ? `Regional HQ overview · ${me.regionCode}` : 'Group HQ overview';
+    $('#asOf').textContent = `Live valuation as of ${pm.asOfDate} · ${pm.regions.length} region${pm.regions.length === 1 ? '' : 's'} · ${pm.shops.length} shop${pm.shops.length === 1 ? '' : 's'} · ${num(pm.units)} units on hand`;
+    $('#regionCard').hidden = me.role === 'SHOP_MANAGER';
+    $('#regionTable').innerHTML = regionRows(pm.regions);
     const tiles = [
       ['Purchase cost value (V<sub>cost</sub>)', money(pm.costValue), 'Σ on-hand × purchase price'],
       ['Retail potential (V<sub>retail</sub>)', money(pm.retailValue), 'Σ on-hand × sale price'],
@@ -129,6 +155,35 @@ const App = (() => {
         <td class="num">${money(s.cogs30d)}</td><td class="num">${num(s.turnoverRate, 2)}×</td><td class="num">${money(s.provision)}</td><td class="num">${money(s.netRealisableCost)}</td>
         <td>${meter(s.storageUtilisation)}</td><td>${meter(s.budgetUtilisation)}</td></tr>`).join('');
   };
+
+  function regionRows(regions) {
+    return `<tr><th>Region</th><th>HQ</th><th class="num">Shops</th><th class="num">Units</th><th class="num">V<sub>cost</sub></th><th class="num">V<sub>retail</sub></th><th class="num">COGS 30d</th><th class="num">Turnover</th><th class="num">Provision</th><th class="num">Net realisable</th><th>Storage</th><th>Budget</th></tr>` +
+      regions.map(r => `<tr><td><b>${esc(r.regionCode)}</b> ${esc(r.regionName)}</td><td>${esc(r.hqCity)}</td><td class="num">${r.shopCount}</td><td class="num">${num(r.units)}</td><td class="num">${money(r.costValue)}</td><td class="num">${money(r.retailValue)}</td>
+      <td class="num">${money(r.cogs30d)}</td><td class="num">${num(r.turnoverRate, 2)}×</td><td class="num">${money(r.provision)}</td><td class="num">${money(r.netRealisableCost)}</td><td>${meter(r.storageUtilisation)}</td><td>${meter(r.budgetUtilisation)}</td></tr>`).join('');
+  }
+
+  // ---------- regions ----------
+  loaders.regions = async () => {
+    await loadMaster();
+    const pm = await api('/analytics/portfolio');
+    const metrics = Object.fromEntries(pm.regions.map(r => [r.regionId, r]));
+    $('#regionMasterTable').innerHTML = `<tr><th>Code</th><th>Name</th><th>Regional HQ city</th><th class="num">Shops</th><th class="num">V<sub>cost</sub></th><th class="num">Turnover</th><th class="num">Provision</th><th>Storage</th><th>Budget</th><th>Status</th><th></th></tr>` +
+      state.regions.map(g => { const m = metrics[g.id]; return `<tr class="${g.active ? '' : 'inactive'}"><td><b>${esc(g.code)}</b></td><td>${esc(g.name)}</td><td>${esc(g.hqCity)}</td><td class="num">${g.shopCount}</td>
+      <td class="num">${m ? money(m.costValue) : '–'}</td><td class="num">${m ? num(m.turnoverRate, 2) + '×' : '–'}</td><td class="num">${m ? money(m.provision) : '–'}</td><td>${m ? meter(m.storageUtilisation) : '–'}</td><td>${m ? meter(m.budgetUtilisation) : '–'}</td>
+      <td>${g.active ? 'Active' : 'Inactive'}</td><td>${can('HQ_ADMIN') ? `<button class="small ghost" onclick="App.editRegion(${g.id})">Edit</button> <button class="small ghost" onclick="App.toggleRegion(${g.id})">${g.active ? 'Deactivate' : 'Activate'}</button>` : ''}</td></tr>`; }).join('');
+  };
+  function editRegion(id) {
+    const g = state.regions.find(x => x.id === id);
+    openModal(g ? 'Edit region ' + g.code : 'New region', [['code', 'Code', 'text'], ['name', 'Name', 'text'], ['hqCity', 'Regional HQ city', 'text']], g, async body => {
+      await api(g ? '/regions/' + id : '/regions', { method: g ? 'PUT' : 'POST', body: JSON.stringify(body) });
+      toast('Region saved'); loaders.regions();
+    });
+  }
+  async function toggleRegion(id) {
+    const g = state.regions.find(x => x.id === id);
+    try { await api(g.active ? `/regions/${id}` : `/regions/${id}/activate`, { method: g.active ? 'DELETE' : 'POST' }); toast('Region updated'); loaders.regions(); }
+    catch (e) { toast(e.message); }
+  }
 
   function renderAlerts() {
     const types = ['ALL', ...new Set(state.alerts.map(a => a.type))];
@@ -208,12 +263,15 @@ const App = (() => {
     $('#skuTable').innerHTML = `<tr><th>Code</th><th>Name</th><th>Category</th><th class="num">Purchase</th><th class="num">Sale</th><th class="num">Margin</th><th class="num">Volume m³</th><th class="num">Shelf life</th><th>Status</th><th></th></tr>` +
       state.skus.map(s => `<tr class="${s.active ? '' : 'inactive'}"><td><b>${esc(s.code)}</b></td><td>${esc(s.name)}</td><td>${esc(s.category)}</td><td class="num">${money(s.purchasePrice)}</td><td class="num">${money(s.salePrice)}</td>
       <td class="num">${pct((s.salePrice - s.purchasePrice) / (s.salePrice || 1))}</td><td class="num">${s.unitVolumeM3}</td><td class="num">${s.shelfLifeDays}d</td><td>${s.active ? 'Active' : 'Inactive'}</td>
-      <td><button class="small ghost" onclick="App.editSku(${s.id})">Edit</button> ${s.active ? `<button class="small ghost" onclick="App.toggleSku(${s.id}, false)">Deactivate</button>` : `<button class="small ghost" onclick="App.toggleSku(${s.id}, true)">Activate</button>`}</td></tr>`).join('');
+      <td>${!can('HQ_ADMIN') ? '' : `<button class="small ghost" onclick="App.editSku(${s.id})">Edit</button>`} ${!can('HQ_ADMIN') ? '' : s.active ? `<button class="small ghost" onclick="App.toggleSku(${s.id}, false)">Deactivate</button>` : `<button class="small ghost" onclick="App.toggleSku(${s.id}, true)">Activate</button>`}</td></tr>`).join('');
   };
   function openModal(title, fields, values, onSubmit) {
     const f = $('#modalForm');
-    f.innerHTML = `<h3>${esc(title)}</h3>` + fields.map(([name, label, type, extra]) => `<label>${esc(label)} <input name="${name}" type="${type}" ${extra || ''} value="${esc(values?.[name] ?? '')}" required></label>`).join('') +
+    f.innerHTML = `<h3>${esc(title)}</h3>` + fields.map(([name, label, type, extra]) => type === 'select'
+      ? `<label>${esc(label)} <select name="${name}" required>${extra}</select></label>`
+      : `<label>${esc(label)} <input name="${name}" type="${type}" ${extra || ''} value="${esc(values?.[name] ?? '')}" required></label>`).join('') +
       `<div class="result" id="modalResult"></div><div class="actions"><button type="button" class="ghost" id="modalCancel">Cancel</button><button type="submit">Save</button></div>`;
+    fields.filter(f => f[2] === 'select' && values?.[f[0]] != null).forEach(f => { f.value = values[f[0]]; $(`#modalForm select[name="${f[0]}"]`).value = values[f[0]]; });
     $('#modalCancel').onclick = () => $('#modal').close();
     f.onsubmit = async ev => {
       ev.preventDefault();
@@ -241,10 +299,11 @@ const App = (() => {
   // ---------- Shops ----------
   loaders.shops = async () => {
     await loadMaster();
-    $('#shopMasterTable').innerHTML = `<tr><th>Code</th><th>Name</th><th>City</th><th class="num">Capacity m³</th><th class="num">Budget</th><th>Storage used</th><th>Budget used</th><th>Status</th><th></th></tr>` +
-      state.shops.map(s => `<tr class="clickable ${s.active ? '' : 'inactive'}" data-id="${s.id}"><td><b>${esc(s.code)}</b></td><td>${esc(s.name)}</td><td>${esc(s.city)}</td><td class="num">${num(s.storageCapacityM3, 3)}</td><td class="num">${money(s.capitalBudget)}</td>
+    const manage = can('HQ_ADMIN', 'REGION_MANAGER');
+    $('#shopMasterTable').innerHTML = `<tr><th>Code</th><th>Name</th><th>Region</th><th>City</th><th class="num">Capacity m³</th><th class="num">Budget</th><th>Storage used</th><th>Budget used</th><th>Status</th><th></th></tr>` +
+      state.shops.map(s => `<tr class="clickable ${s.active ? '' : 'inactive'}" data-id="${s.id}"><td><b>${esc(s.code)}</b></td><td>${esc(s.name)}</td><td>${esc(s.regionCode)}</td><td>${esc(s.city)}</td><td class="num">${num(s.storageCapacityM3, 3)}</td><td class="num">${money(s.capitalBudget)}</td>
       <td>${meter(s.storageUtilisation)}</td><td>${meter(s.budgetUtilisation)}</td><td>${s.active ? 'Active' : 'Inactive'}</td>
-      <td><button class="small ghost" data-edit="${s.id}">Edit</button> <button class="small ghost" data-toggle="${s.id}">${s.active ? 'Deactivate' : 'Activate'}</button></td></tr>`).join('');
+      <td>${manage ? `<button class="small ghost" data-edit="${s.id}">Edit</button> <button class="small ghost" data-toggle="${s.id}">${s.active ? 'Deactivate' : 'Activate'}</button>` : ''}</td></tr>`).join('');
     $$('#shopMasterTable tr[data-id]').forEach(tr => tr.onclick = ev => {
       if (ev.target.dataset.edit) return editShop(+ev.target.dataset.edit);
       if (ev.target.dataset.toggle) return toggleShop(+ev.target.dataset.toggle);
@@ -254,8 +313,9 @@ const App = (() => {
   };
   function editShop(id) {
     const s = state.shops.find(x => x.id === id);
+    const regionOpts = state.regions.filter(g => g.active || g.id === s?.regionId).map(g => `<option value="${g.id}">${esc(g.code)} — ${esc(g.name)}</option>`).join('');
     openModal(s ? 'Edit shop ' + s.code : 'New shop', [
-      ['code', 'Code', 'text'], ['name', 'Name', 'text'], ['city', 'City', 'text'],
+      ['regionId', 'Region', 'select', regionOpts], ['code', 'Code', 'text'], ['name', 'Name', 'text'], ['city', 'City', 'text'],
       ['storageCapacityM3', 'Storage capacity (m³)', 'number', 'step="0.001" min="0.001"'], ['capitalBudget', 'Capital budget (S$)', 'number', 'step="0.01" min="0"']
     ], s, async body => {
       await api(s ? '/shops/' + id : '/shops', { method: s ? 'PUT' : 'POST', body: JSON.stringify(body) });
@@ -296,6 +356,12 @@ const App = (() => {
     const o3 = baseOptions(); o3.plugins.legend = { display: false };
     o3.scales.y.ticks.callback = v => moneyShort(v);
     o3.plugins.tooltip.callbacks = { label: c => { const r = reports[c.dataIndex]; return [`Provision ${money(c.raw)}`, `High-risk cost ${money(r.highCost)}`, `Expired cost ${money(r.expiredCost)}`]; } };
+    const codes = [...new Set(reports.flatMap(r => r.regions.map(g => g.regionCode)))].sort();
+    const series = ['--s1', '--s2', '--s3'];
+    const o4 = baseOptions(); o4.scales.y.ticks.callback = v => moneyShort(v);
+    o4.plugins.tooltip.callbacks = { label: c => `${c.dataset.label}: ${money(c.raw)}` };
+    chart('regionTrend', { type: 'line', data: { labels, datasets: codes.map((code, i) => line(code,
+      reports.map(r => r.regions.find(g => g.regionCode === code)?.costValue ?? null), cssVar(series[i] || '--muted'))) }, options: o4 });
     chart('provTrend', { type: 'bar', data: { labels, datasets: [{ label: 'Provision', data: reports.map(r => r.totalProvision), backgroundColor: cssVar('--s1'), borderRadius: 4, borderSkipped: 'bottom', maxBarThickness: 40 }] }, options: o3 });
 
     const rev = [...reports].reverse();
@@ -315,8 +381,11 @@ const App = (() => {
     $('#reportDetail').hidden = false;
     $('#reportDetailTitle').textContent = `Report ${report.period} · as of ${report.asOfDate} · ${report.shopCount} shops`;
     $('#csvLink').href = `/api/reports/${period}/csv`;
-    $('#reportLines').innerHTML = `<tr><th>Shop</th><th>City</th><th class="num">V<sub>cost</sub></th><th class="num">V<sub>retail</sub></th><th class="num">COGS 30d</th><th class="num">Turnover</th><th class="num">Provision</th><th class="num">High-risk cost</th><th class="num">Expired cost</th><th>Storage</th><th>Budget</th></tr>` +
-      lines.map(l => `<tr><td><b>${esc(l.shopCode)}</b> ${esc(l.shopName)}</td><td>${esc(l.city)}</td><td class="num">${money(l.costValue)}</td><td class="num">${money(l.retailValue)}</td><td class="num">${money(l.cogs30d)}</td>
+    $('#reportRegions').innerHTML = `<tr><th>Region</th><th class="num">Shops</th><th class="num">V<sub>cost</sub></th><th class="num">V<sub>retail</sub></th><th class="num">COGS 30d</th><th class="num">Turnover</th><th class="num">Provision</th><th class="num">Net realisable</th></tr>` +
+      report.regions.map(g => `<tr><td><b>${esc(g.regionCode)}</b> ${esc(g.regionName)}</td><td class="num">${g.shopCount}</td><td class="num">${money(g.costValue)}</td><td class="num">${money(g.retailValue)}</td><td class="num">${money(g.cogs30d)}</td>
+      <td class="num">${num(g.turnoverRate, 2)}×</td><td class="num">${money(g.provision)}</td><td class="num">${money(g.netRealisableCost)}</td></tr>`).join('');
+    $('#reportLines').innerHTML = `<tr><th>Shop</th><th>Region</th><th>City</th><th class="num">V<sub>cost</sub></th><th class="num">V<sub>retail</sub></th><th class="num">COGS 30d</th><th class="num">Turnover</th><th class="num">Provision</th><th class="num">High-risk cost</th><th class="num">Expired cost</th><th>Storage</th><th>Budget</th></tr>` +
+      lines.map(l => `<tr><td><b>${esc(l.shopCode)}</b> ${esc(l.shopName)}</td><td>${esc(l.regionCode)}</td><td>${esc(l.city)}</td><td class="num">${money(l.costValue)}</td><td class="num">${money(l.retailValue)}</td><td class="num">${money(l.cogs30d)}</td>
       <td class="num">${num(l.turnoverRate, 2)}×</td><td class="num">${money(l.provision)}</td><td class="num">${money(l.highRiskCost)}</td><td class="num">${money(l.expiredCost)}</td><td>${meter(l.storageUtilisation)}</td><td>${meter(l.budgetUtilisation)}</td></tr>`).join('');
   }
 
@@ -365,16 +434,55 @@ const App = (() => {
     };
     try { const t = localStorage.getItem('theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
     window.addEventListener('hashchange', route);
+    $('#regionFilter').onchange = () => loaders.dashboard();
+    $('#loginForm').onsubmit = async ev => {
+      ev.preventDefault();
+      try {
+        state.me = await api('/auth/login', { method: 'POST', body: JSON.stringify(formData(ev.target)) });
+        ev.target.reset(); $('#loginResult').innerHTML = '';
+        await startSession();
+      } catch (e) { $('#loginResult').innerHTML = errorHtml(e); }
+    };
+    $('#logoutBtn').onclick = async () => {
+      try { await api('/auth/logout', { method: 'POST' }); } catch (e) {}
+      state.me = null; Object.values(state.charts).forEach(c => c.destroy()); state.charts = {};
+      state.velocityShop = null; $('#velocityCard').hidden = true; $('#reportDetail').hidden = true;
+      showLogin();
+    };
+  }
+
+  async function showLogin() {
+    $('#login').hidden = false; $('#userChip').hidden = true;
+    try {
+      const demo = await api('/auth/demo-accounts');
+      $('#demoAccounts').hidden = !demo.length;
+      $('#demoList').innerHTML = demo.map(d => `<button type="button" data-u="${esc(d.username)}"><span><b>${esc(d.username)}</b> · ${esc(d.displayName)}</span><span class="r">${esc(ROLE_LABEL[d.role])} · ${esc(d.scope)}</span></button>`).join('');
+      $$('#demoList button').forEach(b => b.onclick = () => { const f = $('#loginForm'); f.username.value = b.dataset.u; f.password.value = 'demo1234'; f.password.focus(); });
+    } catch (e) {}
+    $('#loginForm').username.focus();
+  }
+
+  async function startSession() {
+    $('#login').hidden = true;
+    const me = state.me;
+    $('#userChip').hidden = false;
+    $('#userName').textContent = me.displayName;
+    $('#userRole').textContent = ROLE_LABEL[me.role] + (me.shopCode ? ' · ' + me.shopCode : me.regionCode ? ' · ' + me.regionCode : ' · all regions');
+    document.body.dataset.role = me.role;
+    applyRoles();
+    $('#regionFilter').value = '';
+    await loadMaster();
+    route();
   }
 
   async function init() {
     wire();
-    await loadMaster();
     const today = new Date().toISOString().slice(0, 10);
     $('#stockInForm').batchProductionDate.value = today;
-    route();
+    try { state.me = await api('/auth/me'); await startSession(); }
+    catch (e) { showLogin(); }
   }
   document.addEventListener('DOMContentLoaded', init);
 
-  return { loadDashboard: () => loaders.dashboard(), editSku, toggleSku, editShop };
+  return { loadDashboard: () => loaders.dashboard(), editSku, toggleSku, editShop, editRegion, toggleRegion };
 })();

@@ -8,4 +8,6 @@ public interface ShopRepository extends JpaRepository<Shop, Long> {
     boolean existsByCodeIgnoreCase(String code);
     boolean existsByCodeIgnoreCaseAndIdNot(String code, Long id);
     List<Shop> findAllByOrderByCodeAsc();
+    List<Shop> findByRegionId(Long regionId);
+    long countByRegionId(Long regionId);
 }

@@ -15,6 +15,8 @@ public class Shop {
     private String name;
     @Column(nullable = false)
     private String city;
+    @ManyToOne(optional = false) @JoinColumn(name = "region_id")
+    private Region region;
     /** Physical storage boundary in cubic metres. */
     @Column(nullable = false, precision = 12, scale = 3)
     private BigDecimal storageCapacityM3;
@@ -25,8 +27,8 @@ public class Shop {
 
     public Shop() {}
 
-    public Shop(String code, String name, String city, BigDecimal storageCapacityM3, BigDecimal capitalBudget) {
-        this.code = code; this.name = name; this.city = city;
+    public Shop(Region region, String code, String name, String city, BigDecimal storageCapacityM3, BigDecimal capitalBudget) {
+        this.region = region; this.code = code; this.name = name; this.city = city;
         this.storageCapacityM3 = storageCapacityM3; this.capitalBudget = capitalBudget;
     }
 
@@ -37,6 +39,8 @@ public class Shop {
     public void setName(String name) { this.name = name; }
     public String getCity() { return city; }
     public void setCity(String city) { this.city = city; }
+    public Region getRegion() { return region; }
+    public void setRegion(Region region) { this.region = region; }
     public BigDecimal getStorageCapacityM3() { return storageCapacityM3; }
     public void setStorageCapacityM3(BigDecimal v) { this.storageCapacityM3 = v; }
     public BigDecimal getCapitalBudget() { return capitalBudget; }

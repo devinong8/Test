@@ -13,10 +13,11 @@ import java.util.List;
 
 public interface StockTransactionRepository extends JpaRepository<StockTransaction, Long> {
 
-    @Query("select t from StockTransaction t where (:shopId is null or t.shop.id = :shopId) " +
+    /** allShops=true ignores shopIds (pass a non-empty placeholder); otherwise restricts to shopIds. */
+    @Query("select t from StockTransaction t where (:allShops = true or t.shop.id in :shopIds) " +
            "and (:skuId is null or t.sku.id = :skuId) and (:type is null or t.type = :type)")
-    Page<StockTransaction> search(@Param("shopId") Long shopId, @Param("skuId") Long skuId,
-                                  @Param("type") TransactionType type, Pageable pageable);
+    Page<StockTransaction> search(@Param("allShops") boolean allShops, @Param("shopIds") java.util.Collection<Long> shopIds,
+                                  @Param("skuId") Long skuId, @Param("type") TransactionType type, Pageable pageable);
 
     /** Point-in-time on-hand per batch: [batchId, qty]. Used to rebuild historical inventory for reports. */
     @Query("select t.batch.id, sum(t.quantityDelta) from StockTransaction t where t.occurredAt <= :asOf " +

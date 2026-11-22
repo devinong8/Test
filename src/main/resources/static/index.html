@@ -12,13 +12,18 @@
   <div class="brand"><span class="logo">▣</span> Regional Inventory HQ</div>
   <nav id="nav">
     <a href="#dashboard" data-page="dashboard">Dashboard</a>
+    <a href="#regions" data-page="regions" data-roles="HQ_ADMIN,REGION_MANAGER">Regions</a>
     <a href="#inventory" data-page="inventory">Inventory</a>
     <a href="#movements" data-page="movements">Stock In / Out</a>
     <a href="#ledger" data-page="ledger">Ledger</a>
     <a href="#skus" data-page="skus">SKUs</a>
     <a href="#shops" data-page="shops">Shops</a>
-    <a href="#reports" data-page="reports">Monthly Reports</a>
+    <a href="#reports" data-page="reports" data-roles="HQ_ADMIN,REGION_MANAGER">Monthly Reports</a>
   </nav>
+  <div class="userchip" id="userChip" hidden>
+    <div><div class="uname" id="userName"></div><div class="urole" id="userRole"></div></div>
+    <button class="ghost small" id="logoutBtn">Sign out</button>
+  </div>
   <button id="themeToggle" class="ghost" title="Toggle theme" aria-label="Toggle theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor"/></svg></button>
 </header>
 
@@ -26,8 +31,11 @@
   <!-- DASHBOARD -->
   <section id="page-dashboard" class="page">
     <div class="page-head">
-      <div><h1>Portfolio overview</h1><p class="sub" id="asOf"></p></div>
-      <button class="ghost" onclick="App.loadDashboard()">Refresh</button>
+      <div><h1 id="dashTitle">Portfolio overview</h1><p class="sub" id="asOf"></p></div>
+      <div class="inline-controls">
+        <label class="compact" id="regionFilterWrap" hidden>Region <select id="regionFilter"><option value="">All regions</option></select></label>
+        <button class="ghost" onclick="App.loadDashboard()">Refresh</button>
+      </div>
     </div>
     <div class="tiles" id="kpiTiles"></div>
     <div class="grid2">
@@ -43,6 +51,11 @@
         <div id="alerts" class="alerts"></div>
       </div>
     </div>
+    <div class="card" id="regionCard">
+      <h3>Regional HQ breakdown</h3>
+      <p class="hint">Each regional HQ's roll-up of its shops. Turnover is recomputed from summed COGS and cost, not averaged.</p>
+      <div class="table-wrap"><table id="regionTable" class="data"></table></div>
+    </div>
     <div class="card">
       <h3>Monthly turnover rate by shop</h3>
       <p class="hint">COGS<sub>30d</sub> ÷ (V<sub>cost</sub> + ε). Higher means stock converts to sales faster.</p>
@@ -57,6 +70,15 @@
       <h3>Shop breakdown</h3>
       <div class="table-wrap"><table id="shopTable" class="data"></table></div>
     </div>
+  </section>
+
+  <!-- REGIONS -->
+  <section id="page-regions" class="page">
+    <div class="page-head">
+      <div><h1>Regions and regional HQs</h1><p class="sub">Group HQ owns the SKU catalogue and the regions. Each regional HQ manages the shops in its region.</p></div>
+      <button data-roles="HQ_ADMIN" onclick="App.editRegion()">+ New region</button>
+    </div>
+    <div class="card"><div class="table-wrap"><table id="regionMasterTable" class="data"></table></div></div>
   </section>
 
   <!-- INVENTORY -->
@@ -123,18 +145,18 @@
 
   <!-- SKUS -->
   <section id="page-skus" class="page">
-    <div class="page-head"><div><h1>SKU master</h1></div><button onclick="App.editSku()">+ New SKU</button></div>
+    <div class="page-head"><div><h1>SKU master</h1><p class="sub">One product catalogue for all regions, maintained by group HQ.</p></div><button data-roles="HQ_ADMIN" onclick="App.editSku()">+ New SKU</button></div>
     <div class="card"><div class="table-wrap"><table id="skuTable" class="data"></table></div></div>
   </section>
 
   <!-- SHOPS -->
   <section id="page-shops" class="page">
-    <div class="page-head"><div><h1>Shop master</h1></div><button onclick="App.editShop()">+ New Shop</button></div>
+    <div class="page-head"><div><h1>Shop master</h1></div><button data-roles="HQ_ADMIN,REGION_MANAGER" onclick="App.editShop()">+ New Shop</button></div>
     <div class="card"><div class="table-wrap"><table id="shopMasterTable" class="data"></table></div></div>
     <div class="card" id="velocityCard" hidden>
       <h3 id="velocityTitle">Sales velocity</h3>
       <p class="hint">Historical daily sales velocity per SKU. This drives COGS<sub>30d</sub>, turnover and days-of-cover.</p>
-      <form class="inline" id="velocityForm">
+      <form class="inline" id="velocityForm" data-roles="HQ_ADMIN,REGION_MANAGER">
         <select name="skuId" class="skuSelect"></select>
         <input name="dailySalesVelocity" type="number" step="0.1" min="0" placeholder="units / day" required>
         <button type="submit">Set velocity</button>
@@ -147,23 +169,43 @@
   <section id="page-reports" class="page">
     <div class="page-head">
       <div><h1>Monthly management report</h1><p class="sub">Generated automatically at 01:00 SGT on the 1st of each month for the month just closed. Inventory is rebuilt from the ledger as at month-end.</p></div>
-      <form class="inline" id="genForm"><input type="month" name="period" required><button type="submit">Generate now</button></form>
+      <form class="inline" id="genForm" data-roles="HQ_ADMIN"><input type="month" name="period" required><button type="submit">Generate now</button></form>
     </div>
     <div class="grid2">
       <div class="card"><h3>Inventory valuation trend</h3><p class="hint">Purchase-cost value, retail potential and net realisable cost at each month-end.</p><div class="chart-box"><canvas id="valTrend"></canvas></div></div>
       <div class="card"><h3>Regional turnover rate trend</h3><p class="hint">Monthly COGS<sub>30d</sub> ÷ V<sub>cost</sub> across all shops.</p><div class="chart-box"><canvas id="turnTrend"></canvas></div></div>
     </div>
+    <div class="grid2">
+    <div class="card"><h3>Purchase-cost value by region</h3><p class="hint">Each regional HQ's inventory at cost at each month-end.</p><div class="chart-box"><canvas id="regionTrend"></canvas></div></div>
     <div class="card"><h3>Depreciation provision trend</h3><p class="hint">Valuation provision booked against purchase cost at each month-end.</p><div class="chart-box"><canvas id="provTrend"></canvas></div></div>
+    </div>
     <div class="card">
       <div class="row-between"><h3>Report history</h3></div>
       <div class="table-wrap"><table id="reportTable" class="data"></table></div>
     </div>
     <div class="card" id="reportDetail" hidden>
       <div class="row-between"><h3 id="reportDetailTitle"></h3><a id="csvLink" class="btn ghost" href="#">Download CSV</a></div>
+      <div class="table-wrap"><table id="reportRegions" class="data"></table></div>
+      <h3 class="spaced">Shops</h3>
       <div class="table-wrap"><table id="reportLines" class="data"></table></div>
     </div>
   </section>
 </main>
+
+<div id="login" class="login" hidden>
+  <form class="login-card form" id="loginForm">
+    <div class="brand"><span class="logo">▣</span> Regional Inventory HQ</div>
+    <h1>Sign in</h1>
+    <label>Username <input name="username" autocomplete="username" required></label>
+    <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
+    <div class="result" id="loginResult"></div>
+    <button type="submit">Sign in</button>
+    <div id="demoAccounts" hidden>
+      <p class="hint">Demo accounts (password <code>demo1234</code>). Select one to fill the form:</p>
+      <div class="demo-list" id="demoList"></div>
+    </div>
+  </form>
+</div>
 
 <dialog id="modal"><form method="dialog" id="modalForm" class="form"></form></dialog>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>

@@ -1,62 +1,86 @@
 package com.hackathon.inventory.web;
 
 import com.hackathon.inventory.analytics.PortfolioMetrics;
-import com.hackathon.inventory.domain.MonthlyReport;
+import com.hackathon.inventory.domain.MonthlyReportLine;
+import com.hackathon.inventory.domain.Shop;
+import com.hackathon.inventory.repository.ShopRepository;
+import com.hackathon.inventory.security.AccessScope;
+import com.hackathon.inventory.security.CurrentUser;
 import com.hackathon.inventory.service.AnalyticsService;
 import com.hackathon.inventory.service.ReportService;
 import com.hackathon.inventory.web.dto.Alert;
+import com.hackathon.inventory.web.dto.ReportView;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.YearMonth;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api")
 public class AnalyticsController {
+    private static final String HQ_OR_REGION = "hasAnyRole('HQ_ADMIN','REGION_MANAGER')";
+
     private final AnalyticsService analytics;
     private final ReportService reports;
+    private final ShopRepository shops;
+    private final CurrentUser currentUser;
 
-    public AnalyticsController(AnalyticsService analytics, ReportService reports) {
-        this.analytics = analytics; this.reports = reports;
+    public AnalyticsController(AnalyticsService analytics, ReportService reports, ShopRepository shops,
+                               CurrentUser currentUser) {
+        this.analytics = analytics; this.reports = reports; this.shops = shops; this.currentUser = currentUser;
     }
 
-    /** Live valuation / turnover / depreciation. includeBatches=false keeps the payload small for dashboards. */
+    /** Live valuation / turnover / depreciation, scoped to the user and optionally to one region. */
     @GetMapping("/analytics/portfolio")
-    public PortfolioMetrics portfolio(@RequestParam(defaultValue = "false") boolean includeBatches) {
-        PortfolioMetrics pm = analytics.portfolio();
-        if (includeBatches) return pm;
-        return new PortfolioMetrics(pm.asOfDate(), pm.units(), pm.costValue(), pm.retailValue(),
-                pm.potentialGrossMargin(), pm.cogs30d(), pm.turnoverRate(), pm.provision(), pm.netRealisableCost(),
-                pm.costByTier(), pm.shops(), List.of());
+    public PortfolioMetrics portfolio(@RequestParam(defaultValue = "false") boolean includeBatches,
+                                      @RequestParam(required = false) Long regionId) {
+        PortfolioMetrics pm = analytics.portfolio(shopFilter(regionId));
+        return includeBatches ? pm : pm.withoutBatches();
     }
 
     @GetMapping("/analytics/alerts")
-    public List<Alert> alerts() { return analytics.alerts(); }
-
-    @GetMapping("/reports")
-    public List<MonthlyReport> reports() { return reports.list(); }
-
-    @GetMapping("/reports/{period}")
-    public Map<String, Object> report(@PathVariable String period) {
-        MonthlyReport r = reports.get(YearMonth.parse(period).toString());
-        return Map.of("report", r, "lines", r.getLines());
+    public List<Alert> alerts(@RequestParam(required = false) Long regionId) {
+        return analytics.alerts(shopFilter(regionId));
     }
 
-    @GetMapping(value = "/reports/{period}/csv", produces = "text/csv")
+    private Set<Long> shopFilter(Long regionId) {
+        AccessScope scope = currentUser.scope();
+        if (regionId == null) return scope.narrow(null);
+        scope.requireRegion(regionId);
+        return scope.narrow(shops.findByRegionId(regionId).stream().map(Shop::getId).collect(Collectors.toSet()));
+    }
+
+    // ----- monthly management report (group HQ and regional HQs)
+    @GetMapping("/reports") @PreAuthorize(HQ_OR_REGION)
+    public List<ReportView> reports() { return reports.listViews(currentUser.scope()); }
+
+    @GetMapping("/reports/{period}") @PreAuthorize(HQ_OR_REGION)
+    public Map<String, Object> report(@PathVariable String period) {
+        String p = YearMonth.parse(period).toString();
+        AccessScope scope = currentUser.scope();
+        ReportView view = reports.view(p, scope);
+        List<MonthlyReportLine> lines = reports.lines(p, scope);
+        return Map.of("report", view, "lines", lines);
+    }
+
+    @GetMapping(value = "/reports/{period}/csv", produces = "text/csv") @PreAuthorize(HQ_OR_REGION)
     public ResponseEntity<String> csv(@PathVariable String period) {
         String p = YearMonth.parse(period).toString();
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=inventory-report-" + p + ".csv")
-                .contentType(MediaType.parseMediaType("text/csv")).body(reports.csv(p));
+                .contentType(MediaType.parseMediaType("text/csv")).body(reports.csv(p, currentUser.scope()));
     }
 
-    /** Manual trigger for the monthly batch (the scheduler calls the same code path). */
-    @PostMapping("/reports/generate")
-    public MonthlyReport generate(@RequestParam String period) {
-        return reports.generate(YearMonth.parse(period), "MANUAL");
+    /** Manual trigger for the monthly batch (the scheduler calls the same code path). Group HQ only. */
+    @PostMapping("/reports/generate") @PreAuthorize("hasRole('HQ_ADMIN')")
+    public ReportView generate(@RequestParam String period) {
+        return reports.view(reports.generate(YearMonth.parse(period), "MANUAL").getPeriod(), currentUser.scope());
     }
 }

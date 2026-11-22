@@ -3,6 +3,7 @@ package com.hackathon.inventory.service;
 import com.hackathon.inventory.config.BusinessRuleException;
 import com.hackathon.inventory.config.NotFoundException;
 import com.hackathon.inventory.analytics.InventoryFormulas;
+import com.hackathon.inventory.domain.Region;
 import com.hackathon.inventory.domain.SalesVelocity;
 import com.hackathon.inventory.domain.Shop;
 import com.hackathon.inventory.domain.Sku;
@@ -14,7 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.util.List;
 
-/** Elementary information management: SKU master, shop master and sales velocity. */
+/** Elementary information management: regions (HQ), SKU master, shop master and sales velocity. */
 @Service
 @Transactional
 public class MasterDataService {
@@ -22,10 +23,57 @@ public class MasterDataService {
     private final ShopRepository shops;
     private final SalesVelocityRepository velocities;
     private final InventoryBatchRepository batches;
+    private final RegionRepository regions;
 
     public MasterDataService(SkuRepository skus, ShopRepository shops, SalesVelocityRepository velocities,
-                             InventoryBatchRepository batches) {
+                             InventoryBatchRepository batches, RegionRepository regions) {
         this.skus = skus; this.shops = shops; this.velocities = velocities; this.batches = batches;
+        this.regions = regions;
+    }
+
+    // ---------- Region (regional HQ) ----------
+    @Transactional(readOnly = true)
+    public List<RegionView> listRegions() { return regions.findAllByOrderByCodeAsc().stream().map(this::view).toList(); }
+
+    @Transactional(readOnly = true)
+    public Region getRegion(Long id) {
+        return regions.findById(id).orElseThrow(() -> new NotFoundException("Region " + id + " not found"));
+    }
+
+    @Transactional(readOnly = true)
+    public RegionView getRegionView(Long id) { return view(getRegion(id)); }
+
+    public RegionView createRegion(RegionRequest r) {
+        if (regions.existsByCodeIgnoreCase(r.code().trim()))
+            throw new BusinessRuleException("DUPLICATE_CODE", "Region code " + r.code() + " already exists");
+        return view(regions.save(apply(new Region(), r)));
+    }
+
+    public RegionView updateRegion(Long id, RegionRequest r) {
+        Region g = getRegion(id);
+        if (regions.existsByCodeIgnoreCaseAndIdNot(r.code().trim(), id))
+            throw new BusinessRuleException("DUPLICATE_CODE", "Region code " + r.code() + " already exists");
+        return view(apply(g, r));
+    }
+
+    public RegionView setRegionActive(Long id, boolean active) {
+        Region g = getRegion(id);
+        if (!active && shops.findByRegionId(id).stream().anyMatch(Shop::isActive))
+            throw new BusinessRuleException("REGION_HAS_SHOPS", "Region " + g.getCode() + " still has active shops");
+        g.setActive(active);
+        return view(g);
+    }
+
+    private Region apply(Region g, RegionRequest r) {
+        g.setCode(r.code().trim().toUpperCase());
+        g.setName(r.name().trim());
+        g.setHqCity(r.hqCity().trim());
+        return g;
+    }
+
+    private RegionView view(Region g) {
+        return new RegionView(g.getId(), g.getCode(), g.getName(), g.getHqCity(), g.isActive(),
+                g.getId() == null ? 0 : shops.countByRegionId(g.getId()));
     }
 
     // ---------- SKU ----------
@@ -116,6 +164,10 @@ public class MasterDataService {
     public ShopView activateShop(Long id) { Shop s = getShop(id); s.setActive(true); return view(s); }
 
     private Shop apply(Shop s, ShopRequest r) {
+        Region region = getRegion(r.regionId());
+        if (!region.isActive() && (s.getRegion() == null || !s.getRegion().getId().equals(region.getId())))
+            throw new BusinessRuleException("REGION_INACTIVE", "Region " + region.getCode() + " is inactive");
+        s.setRegion(region);
         s.setCode(r.code().trim().toUpperCase());
         s.setName(r.name().trim());
         s.setCity(r.city().trim());
@@ -127,7 +179,7 @@ public class MasterDataService {
     private ShopView view(Shop s) {
         BigDecimal used = s.getId() == null ? BigDecimal.ZERO : batches.usedVolume(s.getId());
         BigDecimal cost = s.getId() == null ? BigDecimal.ZERO : batches.costValue(s.getId());
-        return new ShopView(s.getId(), s.getCode(), s.getName(), s.getCity(), s.getStorageCapacityM3(),
+        return new ShopView(s.getId(), s.getRegion().getId(), s.getRegion().getCode(), s.getRegion().getName(), s.getCode(), s.getName(), s.getCity(), s.getStorageCapacityM3(),
                 s.getCapitalBudget(), s.isActive(), used.setScale(3, java.math.RoundingMode.HALF_UP),
                 cost.setScale(2, java.math.RoundingMode.HALF_UP),
                 InventoryFormulas.ratio(used, s.getStorageCapacityM3()), InventoryFormulas.ratio(cost, s.getCapitalBudget()));

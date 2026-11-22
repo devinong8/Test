@@ -11,6 +11,8 @@ import com.hackathon.inventory.domain.*;
 import com.hackathon.inventory.repository.InventoryBatchRepository;
 import com.hackathon.inventory.repository.MonthlyReportRepository;
 import com.hackathon.inventory.repository.StockTransactionRepository;
+import com.hackathon.inventory.security.AccessScope;
+import com.hackathon.inventory.web.dto.ReportView;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
@@ -86,7 +88,7 @@ public class ReportService {
         Instant asOf = period.equals(current) ? clock.instant()
                 : period.plusMonths(1).atDay(1).atStartOfDay(zone).toInstant().minusNanos(1);
         LocalDate asOfDate = LocalDate.ofInstant(asOf, zone);
-        PortfolioMetrics pm = analytics.analyze(positionsAsOf(asOf), asOfDate, observedVelocity(asOf));
+        PortfolioMetrics pm = analytics.analyze(positionsAsOf(asOf), asOfDate, observedVelocity(asOf), null);
 
         MonthlyReport r = reports.findByPeriod(period.toString()).orElseGet(MonthlyReport::new);
         r.setPeriod(period.toString());
@@ -112,6 +114,11 @@ public class ReportService {
             l.setShopCode(s.shopCode());
             l.setShopName(s.shopName());
             l.setCity(s.city());
+            l.setRegionId(s.regionId());
+            l.setRegionCode(s.regionCode());
+            l.setRegionName(s.regionName());
+            l.setNormalCost(s.costByTier().get(RiskTier.NORMAL));
+            l.setModerateCost(s.costByTier().get(RiskTier.MODERATE));
             l.setCostValue(s.costValue());
             l.setRetailValue(s.retailValue());
             l.setCogs30d(s.cogs30d());
@@ -142,19 +149,62 @@ public class ReportService {
         return r;
     }
 
-    /** Report rows with month-over-month deltas for the trend view. */
+    /** Lines of a report the given scope may see. */
     @Transactional(readOnly = true)
-    public String csv(String period) {
-        MonthlyReport r = get(period);
-        StringBuilder sb = new StringBuilder("period,shop_code,shop_name,city,cost_value,retail_value,cogs_30d," +
+    public List<MonthlyReportLine> lines(String period, AccessScope scope) {
+        return get(period).getLines().stream()
+                .filter(l -> scope.canSeeReportLine(l.getRegionId(), l.getShopId())).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<ReportView> listViews(AccessScope scope) {
+        return list().stream().map(r -> view(r, scope)).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public ReportView view(String period, AccessScope scope) { return view(get(period), scope); }
+
+    /** Totals and regional subtotals re-aggregated from visible lines, so a regional HQ sees only its region. */
+    ReportView view(MonthlyReport r, AccessScope scope) {
+        List<MonthlyReportLine> ls = r.getLines().stream()
+                .filter(l -> scope.canSeeReportLine(l.getRegionId(), l.getShopId())).toList();
+        Map<String, List<MonthlyReportLine>> byRegion = new TreeMap<>();
+        ls.forEach(l -> byRegion.computeIfAbsent(String.valueOf(l.getRegionCode()), k -> new ArrayList<>()).add(l));
+        List<ReportView.RegionLine> regions = new ArrayList<>();
+        byRegion.forEach((code, rl) -> {
+            BigDecimal cost = sum(rl, MonthlyReportLine::getCostValue), cogs = sum(rl, MonthlyReportLine::getCogs30d);
+            BigDecimal prov = sum(rl, MonthlyReportLine::getProvision);
+            regions.add(new ReportView.RegionLine(rl.get(0).getRegionId(), rl.get(0).getRegionCode(),
+                    rl.get(0).getRegionName(), rl.size(), cost, sum(rl, MonthlyReportLine::getRetailValue), cogs,
+                    InventoryFormulas.turnoverRate(cogs, cost), prov, cost.subtract(prov)));
+        });
+        BigDecimal cost = sum(ls, MonthlyReportLine::getCostValue), cogs = sum(ls, MonthlyReportLine::getCogs30d);
+        BigDecimal prov = sum(ls, MonthlyReportLine::getProvision);
+        return new ReportView(r.getPeriod(), r.getAsOfDate(), r.getGeneratedAt(), r.getTrigger(), ls.size(), cost,
+                sum(ls, MonthlyReportLine::getRetailValue), cogs, InventoryFormulas.turnoverRate(cogs, cost), prov,
+                cost.subtract(prov), sum(ls, MonthlyReportLine::getNormalCost), sum(ls, MonthlyReportLine::getModerateCost),
+                sum(ls, MonthlyReportLine::getHighRiskCost), sum(ls, MonthlyReportLine::getExpiredCost), regions);
+    }
+
+    private static BigDecimal sum(List<MonthlyReportLine> ls, Function<MonthlyReportLine, BigDecimal> f) {
+        return ls.stream().map(f).filter(Objects::nonNull).reduce(BigDecimal.ZERO.setScale(2), BigDecimal::add);
+    }
+
+    @Transactional(readOnly = true)
+    public String csv(String period) { return csv(period, AccessScope.ALL); }
+
+    @Transactional(readOnly = true)
+    public String csv(String period, AccessScope scope) {
+        StringBuilder sb = new StringBuilder("period,region_code,shop_code,shop_name,city,cost_value,retail_value,cogs_30d," +
                 "turnover_rate,provision,net_realisable_cost,high_risk_cost,expired_cost,storage_util,budget_util\n");
-        for (MonthlyReportLine l : r.getLines()) {
-            sb.append(String.join(",", r.getPeriod(), l.getShopCode(), quote(l.getShopName()), quote(l.getCity()),
-                    l.getCostValue().toPlainString(), l.getRetailValue().toPlainString(), l.getCogs30d().toPlainString(),
-                    String.format("%.4f", l.getTurnoverRate()), l.getProvision().toPlainString(),
-                    l.getNetRealisableCost().toPlainString(), l.getHighRiskCost().toPlainString(),
-                    l.getExpiredCost().toPlainString(), String.format("%.4f", l.getStorageUtilisation()),
-                    String.format("%.4f", l.getBudgetUtilisation()))).append('\n');
+        for (MonthlyReportLine l : lines(period, scope)) {
+            sb.append(String.join(",", period, String.valueOf(l.getRegionCode()), l.getShopCode(), quote(l.getShopName()),
+                    quote(l.getCity()), l.getCostValue().toPlainString(), l.getRetailValue().toPlainString(),
+                    l.getCogs30d().toPlainString(), String.format("%.4f", l.getTurnoverRate()),
+                    l.getProvision().toPlainString(), l.getNetRealisableCost().toPlainString(),
+                    l.getHighRiskCost().toPlainString(), l.getExpiredCost().toPlainString(),
+                    String.format("%.4f", l.getStorageUtilisation()), String.format("%.4f", l.getBudgetUtilisation())))
+                    .append('\n');
         }
         return sb.toString();
     }

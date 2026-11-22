@@ -22,6 +22,12 @@ public class GlobalExceptionHandler {
         return problem(HttpStatus.NOT_FOUND, "NOT_FOUND", e.getMessage());
     }
 
+    @ExceptionHandler(org.springframework.security.access.AccessDeniedException.class)
+    public ProblemDetail forbidden(org.springframework.security.access.AccessDeniedException e) {
+        return problem(HttpStatus.FORBIDDEN, "FORBIDDEN", e.getMessage() == null || e.getMessage().equals("Access Denied")
+                ? "Your role does not permit this action" : e.getMessage());
+    }
+
     @ExceptionHandler(BusinessRuleException.class)
     public ProblemDetail rule(BusinessRuleException e) {
         ProblemDetail pd = problem(HttpStatus.UNPROCESSABLE_ENTITY, e.getCode(), e.getMessage());

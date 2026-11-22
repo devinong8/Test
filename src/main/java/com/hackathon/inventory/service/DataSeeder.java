@@ -6,9 +6,11 @@ import com.hackathon.inventory.web.dto.StockInRequest;
 import com.hackathon.inventory.web.dto.StockOutRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -24,6 +26,7 @@ import java.util.*;
  */
 @Component
 @ConditionalOnProperty(name = "app.seed.enabled", havingValue = "true")
+@org.springframework.core.annotation.Order(1)
 public class DataSeeder implements ApplicationRunner {
     private static final Logger log = LoggerFactory.getLogger(DataSeeder.class);
     private static final int HISTORY_DAYS = 215;
@@ -36,12 +39,18 @@ public class DataSeeder implements ApplicationRunner {
     private final ReportService reports;
     private final TransactionTemplate tx;
     private final Clock clock;
+    private final RegionRepository regions;
+    private final AppUserRepository users;
+    private final PasswordEncoder encoder;
+    private final String demoPassword;
 
     public DataSeeder(SkuRepository skus, ShopRepository shops, SalesVelocityRepository velocities,
                       InventoryService inventory, InventoryBatchRepository batches, ReportService reports,
-                      TransactionTemplate tx, Clock clock) {
+                      TransactionTemplate tx, Clock clock, RegionRepository regions, AppUserRepository users,
+                      PasswordEncoder encoder, @Value("${app.seed.demo-password:demo1234}") String demoPassword) {
         this.skus = skus; this.shops = shops; this.velocities = velocities; this.inventory = inventory;
-        this.batches = batches; this.reports = reports; this.tx = tx; this.clock = clock;
+        this.batches = batches; this.reports = reports; this.tx = tx; this.clock = clock; this.regions = regions;
+        this.users = users; this.encoder = encoder; this.demoPassword = demoPassword;
     }
 
     private record SkuDef(String code, String name, String cat, String cost, String price, String vol, int life, double baseVel) {}
@@ -68,9 +77,11 @@ public class DataSeeder implements ApplicationRunner {
             new SkuDef("TISS-10", "Tissue 10-pack", "Household", "3.30", "5.90", "0.01800", 1095, 5),
             new SkuDef("VITC-60", "Vitamin C 60s", "Health", "6.50", "14.90", "0.00030", 730, 2));
 
+    /** {city code, city, region code}. */
     private static final String[][] CITIES = {
-            {"SG", "Singapore"}, {"KL", "Kuala Lumpur"}, {"JK", "Jakarta"},
-            {"BK", "Bangkok"}, {"HC", "Ho Chi Minh City"}, {"MN", "Manila"}};
+            {"SG", "Singapore", "SEA-MARITIME"}, {"KL", "Kuala Lumpur", "SEA-MARITIME"},
+            {"JK", "Jakarta", "SEA-MARITIME"}, {"MN", "Manila", "SEA-MARITIME"},
+            {"BK", "Bangkok", "SEA-MAINLAND"}, {"HC", "Ho Chi Minh City", "SEA-MAINLAND"}};
     private static final String[] AREAS = {"Central", "North", "East", "West"};
 
     @Override
@@ -85,6 +96,10 @@ public class DataSeeder implements ApplicationRunner {
         for (SkuDef d : CATALOG)
             skuList.add(skus.save(new Sku(d.code(), d.name(), d.cat(), new BigDecimal(d.cost()), new BigDecimal(d.price()),
                     new BigDecimal(d.vol()), d.life())));
+
+        Map<String, Region> regionByCode = new HashMap<>();
+        regionByCode.put("SEA-MARITIME", regions.save(new Region("SEA-MARITIME", "Maritime Southeast Asia", "Singapore")));
+        regionByCode.put("SEA-MAINLAND", regions.save(new Region("SEA-MAINLAND", "Mainland Southeast Asia", "Bangkok")));
 
         ZoneId zone = clock.getZone();
         LocalDate today = LocalDate.now(clock);
@@ -111,7 +126,7 @@ public class DataSeeder implements ApplicationRunner {
                     expCost += v * cycle * Double.parseDouble(d.cost());
                     expVol += v * cycle * Double.parseDouble(d.vol());
                 }
-                Shop shop = shops.save(new Shop(city[0] + "-" + String.format("%02d", a + 1),
+                Shop shop = shops.save(new Shop(regionByCode.get(city[2]), city[0] + "-" + String.format("%02d", a + 1),
                         city[1] + " " + AREAS[a], city[1],
                         BigDecimal.valueOf(Math.max(1.0, expVol * tight * 1.3)).setScale(3, RoundingMode.HALF_UP),
                         BigDecimal.valueOf(Math.ceil(expCost * tight * 1.6 / 100.0) * 100).setScale(2, RoundingMode.HALF_UP)));
@@ -123,10 +138,25 @@ public class DataSeeder implements ApplicationRunner {
             }
         }
         log.info("Seeded {} shops, {} SKUs in {} ms", shops.count(), skus.count(), System.currentTimeMillis() - t0);
+        seedUsers(regionByCode);
 
         YearMonth current = YearMonth.now(clock);
         for (int m = 6; m >= 1; m--) reports.generate(current.minusMonths(m), "BACKFILL");
         log.info("Back-filled 6 monthly reports");
+    }
+
+    /** One demo login per role. Passwords are bcrypt-hashed; the shared demo password is configurable. */
+    private void seedUsers(Map<String, Region> regionByCode) {
+        String hash = encoder.encode(demoPassword);
+        Region maritime = regionByCode.get("SEA-MARITIME"), mainland = regionByCode.get("SEA-MAINLAND");
+        Shop sg01 = shops.findAll().stream().filter(s -> s.getCode().equals("SG-01")).findFirst().orElseThrow();
+        Shop bk01 = shops.findAll().stream().filter(s -> s.getCode().equals("BK-01")).findFirst().orElseThrow();
+        users.save(new AppUser("hq.admin", hash, "Group HQ Admin", Role.HQ_ADMIN, null, null));
+        users.save(new AppUser("rhq.maritime", hash, "Regional HQ Singapore", Role.REGION_MANAGER, maritime, null));
+        users.save(new AppUser("rhq.mainland", hash, "Regional HQ Bangkok", Role.REGION_MANAGER, mainland, null));
+        users.save(new AppUser("shop.sg01", hash, "Singapore Central Manager", Role.SHOP_MANAGER, maritime, sg01));
+        users.save(new AppUser("shop.bk01", hash, "Bangkok Central Manager", Role.SHOP_MANAGER, mainland, bk01));
+        log.info("Seeded demo users: hq.admin, rhq.maritime, rhq.mainland, shop.sg01, shop.bk01");
     }
 
     private static int interval(int shelfLife) { return Math.max(2, Math.min(14, shelfLife / 3)); }

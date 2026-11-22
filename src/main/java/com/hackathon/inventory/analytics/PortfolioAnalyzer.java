@@ -71,7 +71,8 @@ public final class PortfolioAnalyzer {
                 skuIds.add(r.skuId());
             }
             volume = volume.setScale(3, RoundingMode.HALF_UP);
-            shopMetrics.add(new ShopMetrics(shop.getId(), shop.getCode(), shop.getName(), shop.getCity(), units,
+            shopMetrics.add(new ShopMetrics(shop.getId(), shop.getCode(), shop.getName(), shop.getCity(),
+                    shop.getRegion().getId(), shop.getRegion().getCode(), shop.getRegion().getName(), units,
                     skuIds.size(), cost, retail, cogs, turnoverRate(cogs, cost), prov, cost.subtract(prov),
                     tierBreakdown(rs), volume, shop.getStorageCapacityM3(), ratio(volume, shop.getStorageCapacityM3()),
                     shop.getCapitalBudget(), ratio(cost, shop.getCapitalBudget())));
@@ -85,7 +86,35 @@ public final class PortfolioAnalyzer {
         long units = all.stream().mapToLong(BatchRisk::onHandQty).sum();
         all.sort(Comparator.comparingDouble(BatchRisk::rDep).reversed());
         return new PortfolioMetrics(asOf, units, cost, retail, retail.subtract(cost), cogs, turnoverRate(cogs, cost),
-                prov, cost.subtract(prov), tierBreakdown(all), shopMetrics, all);
+                prov, cost.subtract(prov), tierBreakdown(all), rollUpRegions(shops, shopMetrics), shopMetrics, all);
+    }
+
+    /** Regional HQ subtotals: sums of their shops; turnover recomputed from the sums (not averaged). */
+    static List<RegionMetrics> rollUpRegions(Collection<Shop> shops, List<ShopMetrics> shopMetrics) {
+        Map<Long, String> hqCity = new HashMap<>();
+        shops.forEach(s -> hqCity.put(s.getRegion().getId(), s.getRegion().getHqCity()));
+        Map<Long, List<ShopMetrics>> byRegion = new TreeMap<>();
+        shopMetrics.forEach(m -> byRegion.computeIfAbsent(m.regionId(), k -> new ArrayList<>()).add(m));
+        List<RegionMetrics> out = new ArrayList<>();
+        byRegion.forEach((id, ms) -> {
+            BigDecimal cost = sumS(ms, ShopMetrics::costValue), retail = sumS(ms, ShopMetrics::retailValue);
+            BigDecimal cogs = sumS(ms, ShopMetrics::cogs30d), prov = sumS(ms, ShopMetrics::provision);
+            BigDecimal used = sumS(ms, ShopMetrics::usedVolumeM3), cap = sumS(ms, ShopMetrics::storageCapacityM3);
+            BigDecimal budget = sumS(ms, ShopMetrics::capitalBudget);
+            Map<RiskTier, BigDecimal> tiers = new EnumMap<>(RiskTier.class);
+            for (RiskTier t : RiskTier.values()) tiers.put(t, ms.stream().map(m -> m.costByTier().get(t))
+                    .reduce(BigDecimal.ZERO.setScale(2), BigDecimal::add));
+            ShopMetrics first = ms.get(0);
+            out.add(new RegionMetrics(id, first.regionCode(), first.regionName(), hqCity.get(id), ms.size(),
+                    ms.stream().mapToLong(ShopMetrics::units).sum(), cost, retail, cogs, turnoverRate(cogs, cost), prov,
+                    cost.subtract(prov), tiers, ratio(used, cap), ratio(cost, budget)));
+        });
+        out.sort(Comparator.comparing(RegionMetrics::regionCode));
+        return out;
+    }
+
+    private static BigDecimal sumS(List<ShopMetrics> ms, java.util.function.Function<ShopMetrics, BigDecimal> f) {
+        return ms.stream().map(f).reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
     private static Map<RiskTier, BigDecimal> tierBreakdown(List<BatchRisk> rs) {

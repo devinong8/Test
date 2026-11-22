@@ -36,22 +36,32 @@ public class AnalyticsService {
         this.batches = batches; this.velocities = velocities; this.shops = shops; this.skus = skus; this.clock = clock;
     }
 
-    public PortfolioMetrics portfolio() {
+    public PortfolioMetrics portfolio() { return portfolio(null); }
+
+    /** Live metrics restricted to the given shops (null = every shop). */
+    public PortfolioMetrics portfolio(Set<Long> shopIds) {
         return analyze(batches.findInStock(null).stream().map(AnalyticsService::toPosition).toList(),
-                LocalDate.now(clock));
+                LocalDate.now(clock), velocityMap(), shopIds);
     }
 
     /** Runs the shared analyzer over an arbitrary set of positions (live or point-in-time). */
     public PortfolioMetrics analyze(List<Position> positions, LocalDate asOf) {
-        return analyze(positions, asOf, velocityMap());
+        return analyze(positions, asOf, velocityMap(), null);
     }
 
-    public PortfolioMetrics analyze(List<Position> positions, LocalDate asOf, Map<VelocityKey, BigDecimal> vel) {
+    public PortfolioMetrics analyze(List<Position> positions, LocalDate asOf, Map<VelocityKey, BigDecimal> vel,
+                                    Set<Long> shopIds) {
         Map<Long, Sku> skuMap = skus.findAll().stream().collect(Collectors.toMap(Sku::getId, Function.identity()));
-        Set<Long> shopsWithStock = positions.stream().map(p -> p.shop().getId()).collect(Collectors.toSet());
+        List<Position> scoped = shopIds == null ? positions
+                : positions.stream().filter(p -> shopIds.contains(p.shop().getId())).toList();
+        Map<VelocityKey, BigDecimal> scopedVel = shopIds == null ? vel : vel.entrySet().stream()
+                .filter(e -> shopIds.contains(e.getKey().shopId()))
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+        Set<Long> shopsWithStock = scoped.stream().map(p -> p.shop().getId()).collect(Collectors.toSet());
         List<Shop> shopList = shops.findAll().stream()
+                .filter(s -> shopIds == null || shopIds.contains(s.getId()))
                 .filter(s -> s.isActive() || shopsWithStock.contains(s.getId())).toList();
-        return PortfolioAnalyzer.analyze(shopList, positions, vel, skuMap, asOf);
+        return PortfolioAnalyzer.analyze(shopList, scoped, scopedVel, skuMap, asOf);
     }
 
     public Map<VelocityKey, BigDecimal> velocityMap() {
@@ -66,8 +76,10 @@ public class AnalyticsService {
     }
 
     /** Alerts: expiry risk, stock-out / low cover (with capacity & budget-aware reorder qty), overstock, limits. */
-    public List<Alert> alerts() {
-        PortfolioMetrics pm = portfolio();
+    public List<Alert> alerts() { return alerts(null); }
+
+    public List<Alert> alerts(Set<Long> shopIds) {
+        PortfolioMetrics pm = portfolio(shopIds);
         List<Alert> alerts = new ArrayList<>();
 
         for (BatchRisk b : pm.batches()) {
@@ -90,6 +102,7 @@ public class AnalyticsService {
         for (SalesVelocity v : velocities.findAll()) {
             double vel = v.getDailySalesVelocity().doubleValue();
             if (vel <= 0 || !v.getShop().isActive() || !v.getSku().isActive()) continue;
+            if (shopIds != null && !shopIds.contains(v.getShop().getId())) continue;
             VelocityKey key = new VelocityKey(v.getShop().getId(), v.getSku().getId());
             long qty = onHand.getOrDefault(key, 0L);
             double cover = qty / vel;

@@ -1,14 +1,14 @@
 # Product Inventory Management — Hackathon BE2
 
-Regional HQ system that manages product inventory for 24 shops across 6 cities. It covers SKU and shop master data, Stock-In / Stock-Out with storage and capital-budget limits, batch-level depreciation risk, and an automated **Monthly Management Report** with trends.
+Regional HQ system that manages product inventory for 24 shops across 6 cities in 2 regions. It covers regions, SKU and shop master data, Stock-In / Stock-Out with storage and capital-budget limits, batch-level depreciation risk, and an automated **Monthly Management Report** with trends. Access is role-based: group HQ, regional HQ and shop manager.
 
-**Stack:** Java 21 · Spring Boot 3.4 (Web, Data JPA, Validation, Actuator, Scheduling) · H2 (file DB; JPA makes it swappable for Postgres) · Micrometer/Prometheus · vanilla JS + Chart.js front end (bundled locally, works offline).
+**Stack:** Java 21 · Spring Boot 3.4 (Web, Data JPA, Validation, Security, Actuator, Scheduling) · H2 (file DB; JPA makes it swappable for Postgres) · Micrometer/Prometheus · vanilla JS + Chart.js front end (bundled locally, works offline).
 
 | Acceptance criterion | Status | Where |
 |---|---|---|
-| (Mandatory) Elementary information management: SKU and shop | ✅ CRUD, validation, unique codes, soft-deactivate | `MasterDataService`, UI **SKUs** / **Shops** tabs |
+| (Mandatory) Elementary information management: SKU and shop | ✅ CRUD, validation, unique codes, soft-deactivate; shops belong to a **Region** (regional HQ) | `MasterDataService`, UI **Regions** / **SKUs** / **Shops** tabs |
 | (Mandatory) On-going inventory management: Stock-In / Stock-Out, analysis and observability | ✅ Ledger, FEFO, limits, alerts, metrics, correlation ids | `InventoryService`, `AnalyticsService`, UI **Stock In / Out**, **Ledger**, **Inventory**, **Dashboard** |
-| (Optional plus) Monthly management report: automated batch, valuation / turnover / depreciation across all shops, with trend | ✅ `@Scheduled` batch, point-in-time rebuild from the ledger, CSV export | `ReportService`, `ReportScheduler`, UI **Monthly Reports** |
+| (Optional plus) Monthly management report: automated batch, valuation / turnover / depreciation across all shops, with trend | ✅ `@Scheduled` batch, point-in-time rebuild from the ledger, regional subtotals, CSV export | `ReportService`, `ReportScheduler`, UI **Monthly Reports** |
 
 ---
 
@@ -19,14 +19,27 @@ mvn spring-boot:run              # or: mvn package && java -jar target/inventory
 open http://localhost:8080       # UI
 ```
 
-On first start against an empty DB, `DataSeeder` creates 20 SKUs and 24 shops, then simulates about 7 months of receipts, sales, damage and expiry write-offs (~20k ledger entries) **through the real `InventoryService`**, so every business rule is applied. It then back-fills 6 monthly reports so the trend view has history. This takes about 20 seconds once. To reset, delete `./data/`. To turn seeding off, set `app.seed.enabled=false`.
+On first start against an empty DB, `DataSeeder` creates 2 regions, 20 SKUs, 24 shops and 5 demo users, then simulates about 7 months of receipts, sales, damage and expiry write-offs (~20k ledger entries) **through the real `InventoryService`**, so every business rule is applied. It then back-fills 6 monthly reports so the trend view has history. This takes about 20 seconds once. To reset, delete `./data/`. **Delete it when upgrading from a build without regions**, because the schema changed. To turn seeding off, set `app.seed.enabled=false`.
 
-Other endpoints: `/h2-console` (JDBC URL `jdbc:h2:file:./data/inventory`), `/actuator/health`, `/actuator/prometheus`.
+### Demo logins
+
+All seeded accounts use the password `demo1234` (set by `app.seed.demo-password`; stored as bcrypt). The sign-in screen lists them, and selecting one fills in the form.
+
+| Username | Role | Sees and manages |
+|---|---|---|
+| `hq.admin` | **Group HQ** (`HQ_ADMIN`) | Everything. The only role that can edit regions and the SKU catalogue and run the monthly batch |
+| `rhq.maritime` | **Regional HQ** (`REGION_MANAGER`), Singapore | Region SEA-MARITIME (SG, KL, JK, MN: 16 shops): its shops, limits, velocities, stock, reports |
+| `rhq.mainland` | **Regional HQ** (`REGION_MANAGER`), Bangkok | Region SEA-MAINLAND (BK, HC: 8 shops) |
+| `shop.sg01` / `shop.bk01` | **Shop manager** (`SHOP_MANAGER`) | One shop: dashboard, inventory, stock in/out, ledger, alerts. Read-only master data, no reports |
+
+For a real deployment with seeding off, set `APP_SECURITY_BOOTSTRAP_ADMIN_PASSWORD` to create the first `hq.admin` on an empty database.
+
+Other endpoints (HQ admin only, except health): `/h2-console` (JDBC URL `jdbc:h2:file:./data/inventory`), `/actuator/health`, `/actuator/prometheus`.
 
 ## Test it
 
 ```bash
-mvn test                          # 36 tests: unit, integration and API
+mvn test                          # 42 tests: unit, integration, API and security
 node e2e/screenshots.js           # with the app running: browser e2e + regenerates docs/screenshots
 ```
 
@@ -36,12 +49,23 @@ node e2e/screenshots.js           # with the app running: browser e2e + regenera
 | `PortfolioAnalyzerTest` (2) | A fully hand-computed, two-shop worked example (V<sub>cost</sub>, V<sub>retail</sub>, COGS, turnover, provision, NRV, volume, utilisation) |
 | `InventoryServiceIntegrationTest` (9) | Capacity and budget rejection (with max acceptable qty); expired-on-arrival; FEFO allocation; sales skip expired stock; write-off; batch ownership; **12 concurrent stock-outs never oversell** and the ledger always matches the balance |
 | `ReportServiceIntegrationTest` (4) | Report rebuilds inventory **as at month-end from the ledger** (Sep / Oct / Nov checked by hand); regeneration is idempotent; future periods are rejected; scheduler targets the previous month; budget-aware reorder suggestion |
-| `ApiIntegrationTest` (3) | REST contract: 201/400/404/422 problem responses, correlation-id propagation, ledger filters, analytics numbers, CSV, health, metrics |
-| `e2e/screenshots.js` (9 checks) | Real browser: dashboard, tier filter, stock-in, oversell rejected, ledger, ≥ 6-month trend, dark theme, no horizontal scroll at phone width, zero console errors |
+| `ApiIntegrationTest` (3) | REST contract: 201/400/404/422 problem responses, correlation-id propagation, ledger filters, analytics numbers, region subtotals, CSV, health, metrics |
+| `SecurityIntegrationTest` (5) | **Role and row-level scoping**: anonymous → 401; group HQ sees both regions with subtotals that add up; a regional HQ sees only its region (shops, ledger, analytics, report totals, CSV) and can't open shops elsewhere, edit SKUs or run the batch; a shop manager sees and moves only its own shop; missing CSRF token → 403 |
+| `LoginFlowHttpTest` (1) | The browser's real HTTP flow on a random port: XSRF cookie → bad password 401 → login → HttpOnly session cookie → API → logout → 401 |
+| `e2e/screenshots.js` (23 checks) | Real browser, signed in as each role: sign-in screen and bad password; the shop manager's single-shop view with no Reports/Regions tabs; the regional HQ's region-only dashboard and report; group HQ dashboard, regions, tier filter, stock-in, oversell rejected, ledger, ≥ 6-month trend, dark theme, phone width, zero console errors |
 
 Tests run against an in-memory DB with the clock fixed to `2026-11-22 10:00 SGT`, so they are deterministic.
 
 ---
+
+## Where is the Regional HQ?
+
+It is modelled explicitly at two levels:
+
+1. **`Region`**: a regional HQ (code, name, HQ city). Every `Shop` belongs to exactly one region. The dashboard, Regions page and monthly report roll shops up into **regional subtotals**. Turnover is recomputed from summed COGS and cost, not averaged across shops.
+2. **Roles (`AppUser`)**: *Group HQ* owns the SKU catalogue, the regions and the monthly batch. A *Regional HQ* user manages the shops, limits and velocities of its own region. A *Shop manager* runs one shop. Every API call is filtered to the caller's scope on the server (`CurrentUser` → `AccessScope`), not just hidden in the UI.
+
+The SKU catalogue is intentionally group-wide (one price list), and shop limits are set by HQ. That matches the brief's "Regional HQ centrally manages product inventory".
 
 ## Architecture
 
@@ -53,6 +77,7 @@ flowchart LR
 
   subgraph Boot["Spring Boot application"]
     F["CorrelationIdFilter<br/>X-Correlation-Id → MDC → ledger"]
+    SEC["Spring Security<br/>session cookie · CSRF (cookie+header)<br/>@PreAuthorize roles · AccessScope rows"]
     subgraph Web["REST controllers  /api/**"]
       MC[MasterDataController]
       IC[InventoryController]
@@ -70,9 +95,9 @@ flowchart LR
     ACT["Actuator / Micrometer<br/>health · prometheus"]
   end
 
-  DB[("H2 / JPA<br/>sku · shop · sales_velocity<br/>inventory_batch · stock_transaction<br/>monthly_report · monthly_report_line")]
+  DB[("H2 / JPA<br/>region · app_user · sku · shop · sales_velocity<br/>inventory_batch · stock_transaction<br/>monthly_report · monthly_report_line")]
 
-  UI -->|JSON| F --> Web
+  UI -->|JSON| F --> SEC --> Web
   MC --> MDS
   IC --> INV
   AC --> ANS & RS
@@ -87,12 +112,17 @@ flowchart LR
 
 ```mermaid
 erDiagram
+  REGION ||--o{ SHOP : "regional HQ runs"
+  REGION ||--o{ APP_USER : "regional HQ staff"
+  SHOP ||--o{ APP_USER : "shop manager"
   SHOP ||--o{ INVENTORY_BATCH : holds
   SKU  ||--o{ INVENTORY_BATCH : "of"
   SHOP ||--o{ SALES_VELOCITY : has
   SKU  ||--o{ SALES_VELOCITY : has
   INVENTORY_BATCH ||--o{ STOCK_TRANSACTION : "ledger (signed qty)"
   MONTHLY_REPORT ||--o{ MONTHLY_REPORT_LINE : "per shop"
+  REGION { string code UK  string name  string hq_city }
+  APP_USER { string username UK  string password_hash  enum role }
   SKU { string code UK  decimal purchase_price  decimal sale_price  decimal unit_volume_m3  int shelf_life_days }
   SHOP { string code UK  string city  decimal storage_capacity_m3  decimal capital_budget }
   INVENTORY_BATCH { date batch_production_date  long on_hand_qty  long version }
@@ -108,6 +138,8 @@ erDiagram
 5. **Rules are checked before any write.** Capacity, budget, expired-on-arrival and insufficient stock are validated first. Failures return 422 with machine-readable `details` (for example `maxAcceptableQty`), and the UI shows them.
 6. **Money uses `BigDecimal`** (scale 2, HALF_UP). Ratios use `double`.
 7. **Time is injected through `Clock`** in Asia/Singapore, which makes tests deterministic and keeps the cron in SGT.
+8. **Security in two layers.** Roles are checked with `@PreAuthorize` (for example, only group HQ edits SKUs). Row-level scope is enforced by `AccessScope` in every controller, covering reads, writes, analytics, ledger, reports and CSV. Report totals are **re-aggregated from the visible lines**, so a regional HQ never sees group totals.
+9. **SPA auth done properly.** Session cookie (`HttpOnly`, `SameSite=Lax`), session-id rotation on login, CSRF via the `XSRF-TOKEN` cookie plus `X-XSRF-TOKEN` header (token rotated on login), bcrypt passwords, and JSON 401/403 problem responses instead of browser pop-ups.
 
 ### Formulas (from the brief) → code
 
@@ -135,10 +167,14 @@ erDiagram
 
 | Method | Path | Purpose |
 |---|---|---|
+| POST | `/api/auth/login` · `/api/auth/logout` | sign in / out (session cookie) |
+| GET | `/api/auth/me` | current user, role and scope |
+| GET/POST | `/api/regions` | list (scoped) / create region (group HQ) |
+| GET/PUT/DELETE | `/api/regions/{id}` | read / update / deactivate (group HQ; blocked while active shops remain) |
 | GET/POST | `/api/skus` | list / create SKU |
 | GET/PUT/DELETE | `/api/skus/{id}` | read / update / deactivate (blocked while stock is on hand) |
 | POST | `/api/skus/{id}/activate` | reactivate |
-| GET/POST | `/api/shops` | list (with live utilisation) / create shop |
+| GET/POST | `/api/shops?regionId=` | list (scoped, with live utilisation) / create shop (group HQ, or regional HQ in its own region) |
 | GET/PUT/DELETE | `/api/shops/{id}` | read / update (capacity and budget can't go below current usage) / deactivate |
 | GET | `/api/shops/{id}/velocities` | velocity, on hand and days of cover per SKU |
 | PUT | `/api/shops/{id}/velocities/{skuId}` | set daily sales velocity |
@@ -147,18 +183,18 @@ erDiagram
 | GET | `/api/inventory/batches?shopId=` | batches with R<sub>dep</sub>, tier and provision |
 | GET | `/api/inventory/headroom?shopId=&skuId=` | max receivable qty |
 | GET | `/api/inventory/transactions?shopId=&skuId=&type=&page=&size=` | ledger (paged) |
-| GET | `/api/analytics/portfolio?includeBatches=` | region and per-shop valuation, turnover, depreciation |
-| GET | `/api/analytics/alerts` | prioritised alerts with reorder qty |
-| GET | `/api/reports` | report history (trend) |
+| GET | `/api/analytics/portfolio?regionId=&includeBatches=` | total, **per-region** and per-shop valuation, turnover, depreciation (scoped) |
+| GET | `/api/analytics/alerts?regionId=` | prioritised alerts with reorder qty (scoped) |
+| GET | `/api/reports` | report history (trend) with regional subtotals. Group or regional HQ only |
 | GET | `/api/reports/{yyyy-MM}` | report and per-shop lines |
 | GET | `/api/reports/{yyyy-MM}/csv` | CSV export |
 | POST | `/api/reports/generate?period=yyyy-MM` | manual run of the monthly batch |
 
-Errors are RFC 7807 `application/problem+json` with `code`, `detail`, `correlationId`, plus `details` or `errors` where relevant.
+Each role gets **only the data in its scope**: 401 when signed out, 403 when outside role or scope. Errors are RFC 7807 `application/problem+json` with `code`, `detail`, `correlationId`, plus `details` or `errors` where relevant.
 
 ## Screenshots
 
-`docs/screenshots/` contains the dashboard (light, dark and mobile), batch inventory, stock movements (success and rejected oversell), ledger, SKUs, shops with velocity, and monthly reports.
+`docs/screenshots/` contains the sign-in screen, the dashboard per role (group HQ light/dark/mobile, regional HQ, shop manager), the Regions page, batch inventory, stock movements (success and rejected oversell), ledger, SKUs, shops with velocity, and monthly reports.
 
 ## Submission materials
 

@@ -56,7 +56,7 @@ main { max-width: 1320px; margin: 0 auto; padding: 24px; }
   .grid2 { grid-template-columns: 1fr; } main { padding: 16px; }
   .topbar { padding: 10px 16px; flex-wrap: wrap; gap: 8px 12px; }
   nav { order: 3; flex-basis: 100%; }
-  #themeToggle { margin-left: auto; }
+  #themeToggle { margin-left: 0; }
   table.mini td, table.mini th { padding: 6px 6px; white-space: normal; }
 }
 
@@ -137,3 +137,25 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 }
 
 @media (max-width: 600px) { .tiles { grid-template-columns: 1fr 1fr; } .tile { padding: 12px; } .tile .value { font-size: 17px; } }
+
+/* auth + roles */
+.userchip { display: flex; align-items: center; gap: 10px; white-space: nowrap; }
+.userchip .uname { font-weight: 600; font-size: 13px; }
+.userchip .urole { color: var(--ink-2); font-size: 12px; }
+.login { position: fixed; inset: 0; z-index: 50; background: var(--page); display: grid; place-items: center; padding: 16px; }
+.login[hidden] { display: none; }
+.login-card { width: min(420px, 100%); background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 28px; box-shadow: var(--shadow); }
+.login-card h1 { margin: 6px 0 4px; }
+.demo-list { display: grid; gap: 6px; }
+.demo-list button { display: flex; justify-content: space-between; gap: 10px; text-align: left; background: transparent; color: var(--ink); border: 1px solid var(--border); }
+.demo-list button:hover { background: var(--surface-2); }
+.demo-list .r { color: var(--ink-2); font-size: 12.5px; }
+code { background: var(--surface-2); padding: 1px 5px; border-radius: 4px; }
+.inline-controls { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+label.compact { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--ink-2); }
+.form select { width: 100%; }
+h3.spaced { margin-top: 18px; }
+[data-roles][data-hidden-by-role] { display: none !important; }
+@media (max-width: 900px) { .userchip { order: 2; margin-left: auto; } .userchip .urole { display: none; } }
+
+[hidden] { display: none !important; }

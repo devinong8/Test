@@ -24,8 +24,16 @@ class PortfolioAnalyzerTest {
         return s;
     }
 
+    static final com.hackathon.inventory.domain.Region REGION = region(7, "R1");
+
+    static com.hackathon.inventory.domain.Region region(long id, String code) {
+        var r = new com.hackathon.inventory.domain.Region(code, "Region " + code, "Singapore");
+        ReflectionTestUtils.setField(r, "id", id);
+        return r;
+    }
+
     static Shop shop(long id, String cap, String budget) {
-        Shop s = new Shop("SH" + id, "Shop " + id, "City", new BigDecimal(cap), new BigDecimal(budget));
+        Shop s = new Shop(REGION, "SH" + id, "Shop " + id, "City", new BigDecimal(cap), new BigDecimal(budget));
         ReflectionTestUtils.setField(s, "id", id);
         return s;
     }
@@ -77,6 +85,15 @@ class PortfolioAnalyzerTest {
         assertThat(pm.batches()).extracting(BatchRisk::tier)
                 .containsExactly(RiskTier.EXPIRED, RiskTier.HIGH, RiskTier.MODERATE, RiskTier.NORMAL);
         assertThat(pm.batches().get(0).daysToExpiry()).isEqualTo(-1);
+
+        // regional HQ roll-up = sum of its shops; turnover recomputed from sums, not averaged
+        assertThat(pm.regions()).singleElement().satisfies(r -> {
+            assertThat(r.regionCode()).isEqualTo("R1");
+            assertThat(r.shopCount()).isEqualTo(2);
+            assertThat(r.costValue()).isEqualByComparingTo("320.00");
+            assertThat(r.turnoverRate()).isCloseTo(660.0 / 320.0, within(1e-6));
+            assertThat(r.storageUtilisation()).isCloseTo((0.160 + 0.025) / 20, within(1e-9));
+        });
     }
 
     @Test

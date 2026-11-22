@@ -61,7 +61,7 @@ class ReportServiceIntegrationTest extends TestSupport {
             assertThat(l.getShopCode()).isEqualTo("SG-01");
             assertThat(l.getProvision()).isEqualByComparingTo("120.00");
         });
-        assertThat(reports.csv("2026-10")).contains("2026-10,SG-01").contains("480.00");
+        assertThat(reports.csv("2026-10")).contains("2026-10,R-DEFAULT,SG-01").contains("480.00");
     }
 
     @Test

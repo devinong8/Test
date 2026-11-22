@@ -17,12 +17,17 @@ public class MonthlyReportLine {
     private String shopCode;
     private String shopName;
     private String city;
+    private Long regionId;
+    private String regionCode;
+    private String regionName;
     @Column(precision = 18, scale = 2) private BigDecimal costValue;
     @Column(precision = 18, scale = 2) private BigDecimal retailValue;
     @Column(precision = 18, scale = 2) private BigDecimal cogs30d;
     private double turnoverRate;
     @Column(precision = 18, scale = 2) private BigDecimal provision;
     @Column(precision = 18, scale = 2) private BigDecimal netRealisableCost;
+    @Column(precision = 18, scale = 2) private BigDecimal normalCost;
+    @Column(precision = 18, scale = 2) private BigDecimal moderateCost;
     @Column(precision = 18, scale = 2) private BigDecimal expiredCost;
     @Column(precision = 18, scale = 2) private BigDecimal highRiskCost;
     private double storageUtilisation;
@@ -41,6 +46,16 @@ public class MonthlyReportLine {
     public void setShopName(String shopName) { this.shopName = shopName; }
     public String getCity() { return city; }
     public void setCity(String city) { this.city = city; }
+    public Long getRegionId() { return regionId; }
+    public void setRegionId(Long v) { this.regionId = v; }
+    public String getRegionCode() { return regionCode; }
+    public void setRegionCode(String v) { this.regionCode = v; }
+    public String getRegionName() { return regionName; }
+    public void setRegionName(String v) { this.regionName = v; }
+    public BigDecimal getNormalCost() { return normalCost; }
+    public void setNormalCost(BigDecimal v) { this.normalCost = v; }
+    public BigDecimal getModerateCost() { return moderateCost; }
+    public void setModerateCost(BigDecimal v) { this.moderateCost = v; }
     public BigDecimal getCostValue() { return costValue; }
     public void setCostValue(BigDecimal v) { this.costValue = v; }
     public BigDecimal getRetailValue() { return retailValue; }

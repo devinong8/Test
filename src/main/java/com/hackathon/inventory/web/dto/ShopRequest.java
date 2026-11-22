@@ -4,6 +4,7 @@ import jakarta.validation.constraints.*;
 import java.math.BigDecimal;
 
 public record ShopRequest(
+        @NotNull Long regionId,
         @NotBlank @Size(max = 40) String code,
         @NotBlank @Size(max = 255) String name,
         @NotBlank @Size(max = 120) String city,
