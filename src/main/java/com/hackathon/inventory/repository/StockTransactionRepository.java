@@ -28,4 +28,9 @@ public interface StockTransactionRepository extends JpaRepository<StockTransacti
     @Query("select t.shop.id, t.sku.id, -sum(t.quantityDelta) from StockTransaction t where t.type = 'STOCK_OUT' " +
            "and t.reason = 'SALE' and t.occurredAt > :from and t.occurredAt <= :to group by t.shop.id, t.sku.id")
     List<Object[]> soldUnits(@Param("from") Instant from, @Param("to") Instant to);
+
+    /** Seasonal post-mortem: [shopId, type, reason, sum(qty)] for one SKU. */
+    @Query("select t.shop.id, t.type, t.reason, sum(t.quantityDelta) from StockTransaction t " +
+           "where t.sku.code = :skuCode group by t.shop.id, t.type, t.reason")
+    List<Object[]> movementSummaryByShop(@Param("skuCode") String skuCode);
 }

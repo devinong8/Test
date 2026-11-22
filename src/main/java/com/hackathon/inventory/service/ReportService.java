@@ -198,7 +198,7 @@ public class ReportService {
         StringBuilder sb = new StringBuilder("period,region_code,shop_code,shop_name,city,cost_value,retail_value,cogs_30d," +
                 "turnover_rate,provision,net_realisable_cost,high_risk_cost,expired_cost,storage_util,budget_util\n");
         for (MonthlyReportLine l : lines(period, scope)) {
-            sb.append(String.join(",", period, String.valueOf(l.getRegionCode()), l.getShopCode(), quote(l.getShopName()),
+            sb.append(String.join(",", period, quote(l.getRegionCode()), quote(l.getShopCode()), quote(l.getShopName()),
                     quote(l.getCity()), l.getCostValue().toPlainString(), l.getRetailValue().toPlainString(),
                     l.getCogs30d().toPlainString(), String.format("%.4f", l.getTurnoverRate()),
                     l.getProvision().toPlainString(), l.getNetRealisableCost().toPlainString(),
@@ -209,5 +209,13 @@ public class ReportService {
         return sb.toString();
     }
 
-    private static String quote(String s) { return "\"" + (s == null ? "" : s.replace("\"", "\"\"")) + "\""; }
+    /**
+     * Quotes a text cell and neutralises spreadsheet formula injection (CWE-1236): names are user-editable, so a shop
+     * called "=HYPERLINK(...)" must not execute when HQ opens the CSV in Excel / WPS.
+     */
+    static String quote(String s) {
+        String v = s == null ? "" : s;
+        if (!v.isEmpty() && "=+-@\t\r".indexOf(v.charAt(0)) >= 0) v = "'" + v;
+        return "\"" + v.replace("\"", "\"\"") + "\"";
+    }
 }

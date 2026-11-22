@@ -6,6 +6,7 @@ import com.hackathon.inventory.config.CorrelationIdFilter;
 import com.hackathon.inventory.config.NotFoundException;
 import com.hackathon.inventory.domain.*;
 import com.hackathon.inventory.repository.InventoryBatchRepository;
+import com.hackathon.inventory.repository.ShopRepository;
 import com.hackathon.inventory.repository.StockTransactionRepository;
 import com.hackathon.inventory.web.dto.*;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -41,17 +42,27 @@ public class InventoryService {
     private final MasterDataService master;
     private final MeterRegistry meters;
     private final Clock clock;
+    private final ShopRepository shops;
 
     public InventoryService(InventoryBatchRepository batches, StockTransactionRepository txns,
-                            MasterDataService master, MeterRegistry meters, Clock clock) {
+                            MasterDataService master, MeterRegistry meters, Clock clock, ShopRepository shops) {
         this.batches = batches; this.txns = txns; this.master = master; this.meters = meters; this.clock = clock;
+        this.shops = shops;
+    }
+
+    /**
+     * Takes a row lock on the shop for the rest of the transaction. Every movement at one shop is serialised, so the
+     * storage / budget checks and find-or-create of a batch see a consistent picture. Different shops run in parallel.
+     */
+    private Shop lockShop(Long shopId) {
+        return shops.lockById(shopId).orElseThrow(() -> new NotFoundException("Shop " + shopId + " not found"));
     }
 
     public MovementResult stockIn(StockInRequest r) { return stockIn(r, clock.instant()); }
 
     /** Stock-In: validates shop storage boundary and capital budget ceiling before accepting goods. */
     public MovementResult stockIn(StockInRequest r, Instant at) {
-        Shop shop = master.getShop(r.shopId());
+        Shop shop = lockShop(r.shopId());
         Sku sku = master.getSku(r.skuId());
         if (!shop.isActive()) throw new BusinessRuleException("SHOP_INACTIVE", "Shop " + shop.getCode() + " is inactive");
         if (!sku.isActive()) throw new BusinessRuleException("SKU_INACTIVE", "SKU " + sku.getCode() + " is inactive");
@@ -138,7 +149,7 @@ public class InventoryService {
      * expired stock can only leave through a write-off / return / damage movement.
      */
     public MovementResult stockOut(StockOutRequest r, Instant at) {
-        Shop shop = master.getShop(r.shopId());
+        Shop shop = lockShop(r.shopId());
         Sku sku = master.getSku(r.skuId());
         LocalDate today = LocalDate.ofInstant(at, clock.getZone());
         boolean isSale = r.reason() == StockOutReason.SALE;

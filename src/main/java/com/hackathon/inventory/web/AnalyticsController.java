@@ -31,10 +31,20 @@ public class AnalyticsController {
     private final ReportService reports;
     private final ShopRepository shops;
     private final CurrentUser currentUser;
+    private final com.hackathon.inventory.service.FestivalPlanner festivals;
 
     public AnalyticsController(AnalyticsService analytics, ReportService reports, ShopRepository shops,
-                               CurrentUser currentUser) {
+                               CurrentUser currentUser, com.hackathon.inventory.service.FestivalPlanner festivals) {
         this.analytics = analytics; this.reports = reports; this.shops = shops; this.currentUser = currentUser;
+        this.festivals = festivals;
+    }
+
+    /** 节日备货: festival pre-stock plan for the caller's shops (optionally one region), next horizonDays days. */
+    @GetMapping("/analytics/festival-plan")
+    public com.hackathon.inventory.web.dto.FestivalPlan festivalPlan(@RequestParam(defaultValue = "90") int horizonDays,
+                                                                     @RequestParam(required = false) Long regionId) {
+        if (horizonDays < 1 || horizonDays > 400) throw new IllegalArgumentException("horizonDays must be 1..400");
+        return festivals.plan(horizonDays, shopFilter(regionId));
     }
 
     /** Live valuation / turnover / depreciation, scoped to the user and optionally to one region. */

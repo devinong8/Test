@@ -61,7 +61,7 @@ class ReportServiceIntegrationTest extends TestSupport {
             assertThat(l.getShopCode()).isEqualTo("SH-01");
             assertThat(l.getProvision()).isEqualByComparingTo("120.00");
         });
-        assertThat(reports.csv("2026-10")).contains("2026-10,R-DEFAULT,SH-01").contains("480.00");
+        assertThat(reports.csv("2026-10")).contains("2026-10,\"R-DEFAULT\",\"SH-01\"").contains("480.00");
     }
 
     @Test
@@ -99,5 +99,18 @@ class ReportServiceIntegrationTest extends TestSupport {
             assertThat(a.type()).isEqualTo("LOW_STOCK");
             assertThat(a.suggestedQty()).isEqualTo(30L);
         });
+    }
+
+    @Test
+    void csvNeutralisesSpreadsheetFormulaInjection() {
+        Shop evil = shop("SH-66", "100", "1000");
+        evil.setName("=HYPERLINK(\"http://evil.example\",\"click\")");
+        shopRepo.save(evil);
+        reports.generate(YearMonth.of(2026, 10), "TEST");
+        String csv = reports.csv("2026-10");
+        assertThat(csv).contains("\"'=HYPERLINK(\"\"http://evil.example\"\",\"\"click\"\")\"");
+        assertThat(csv).doesNotContain(",\"=HYPERLINK");
+        assertThat(ReportService.quote("+cmd")).isEqualTo("\"'+cmd\"");
+        assertThat(ReportService.quote("静安店 Jing'an")).isEqualTo("\"静安店 Jing'an\"");
     }
 }

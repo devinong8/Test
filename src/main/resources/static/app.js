@@ -13,6 +13,10 @@ const App = (() => {
   // Chinese convention for axis labels: 万 = 10,000, 亿 = 100,000,000
   const moneyShort = v => { v = Number(v); return Math.abs(v) >= 1e8 ? '¥' + (v / 1e8).toFixed(2) + '亿' : Math.abs(v) >= 1e4 ? '¥' + (v / 1e4).toFixed(1) + '万' : '¥' + v.toFixed(0); };
   const num = (v, d = 0) => Number(v).toLocaleString('zh-CN', { minimumFractionDigits: d, maximumFractionDigits: d });
+  // Dates in the viewer's local calendar (toISOString() is UTC and is a day behind in China before 08:00)
+  const localDate = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  // turnover = COGS / (V_cost + ε): with no stock ε makes it ~10^8, which is meaningless to show
+  const turn = (rate, cost) => Number(cost) > 0 ? num(rate, 2) + '×' : '– <span class="hint">no stock</span>';
   const pct = v => (v * 100).toFixed(1) + '%';
   const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
   const badge = (t, cls) => `<span class="badge ${cls}">${esc(t)}</span>`;
@@ -113,7 +117,7 @@ const App = (() => {
       ['Retail potential (V<sub>retail</sub>)', money(pm.retailValue), 'Σ on-hand × sale price'],
       ['Potential gross margin', money(pm.potentialGrossMargin), pct(pm.potentialGrossMargin / (pm.retailValue || 1)) + ' of retail'],
       ['COGS (30 days)', money(pm.cogs30d), 'velocity × 30 × purchase price'],
-      ['Turnover rate (monthly)', num(pm.turnoverRate, 2) + '×', '≈ ' + num(30 / (pm.turnoverRate || 1e-6), 1) + ' days of stock'],
+      ['Turnover rate (monthly)', Number(pm.costValue) > 0 ? num(pm.turnoverRate, 2) + '×' : '–', '≈ ' + num(30 / (pm.turnoverRate || 1e-6), 1) + ' days of stock'],
       ['Depreciation provision', money(pm.provision), pct(pm.provision / (pm.costValue || 1)) + ' of cost'],
       ['Net realisable cost', money(pm.netRealisableCost), 'V<sub>cost</sub> − provision']
     ];
@@ -132,7 +136,7 @@ const App = (() => {
     state.alerts = alerts;
     renderAlerts();
 
-    const byTurnover = [...pm.shops].sort((a, b) => b.turnoverRate - a.turnoverRate);
+    const byTurnover = pm.shops.filter(s => Number(s.costValue) > 0).sort((a, b) => b.turnoverRate - a.turnoverRate);
     chart('turnoverChart', {
       type: 'bar',
       data: { labels: byTurnover.map(s => s.shopCode), datasets: [{ label: 'Turnover rate', data: byTurnover.map(s => +s.turnoverRate.toFixed(3)), backgroundColor: cssVar('--s1'), borderRadius: 4, borderSkipped: 'bottom', maxBarThickness: 28 }] },
@@ -153,14 +157,53 @@ const App = (() => {
 
     $('#shopTable').innerHTML = `<tr><th>Shop</th><th>City</th><th class="num">Units</th><th class="num">V<sub>cost</sub></th><th class="num">V<sub>retail</sub></th><th class="num">COGS 30d</th><th class="num">Turnover</th><th class="num">Provision</th><th class="num">Net realisable</th><th>Storage</th><th>Budget</th></tr>` +
       shops.map(s => `<tr><td><b>${esc(s.shopCode)}</b> ${esc(s.shopName)}</td><td>${esc(s.city)}</td><td class="num">${num(s.units)}</td><td class="num">${money(s.costValue)}</td><td class="num">${money(s.retailValue)}</td>
-        <td class="num">${money(s.cogs30d)}</td><td class="num">${num(s.turnoverRate, 2)}×</td><td class="num">${money(s.provision)}</td><td class="num">${money(s.netRealisableCost)}</td>
+        <td class="num">${money(s.cogs30d)}</td><td class="num">${turn(s.turnoverRate, s.costValue)}</td><td class="num">${money(s.provision)}</td><td class="num">${money(s.netRealisableCost)}</td>
         <td>${meter(s.storageUtilisation)}</td><td>${meter(s.budgetUtilisation)}</td></tr>`).join('');
   };
 
   function regionRows(regions) {
     return `<tr><th>Region</th><th>HQ</th><th class="num">Shops</th><th class="num">Units</th><th class="num">V<sub>cost</sub></th><th class="num">V<sub>retail</sub></th><th class="num">COGS 30d</th><th class="num">Turnover</th><th class="num">Provision</th><th class="num">Net realisable</th><th>Storage</th><th>Budget</th></tr>` +
       regions.map(r => `<tr><td><b>${esc(r.regionCode)}</b> ${esc(r.regionName)}</td><td>${esc(r.hqCity)}</td><td class="num">${r.shopCount}</td><td class="num">${num(r.units)}</td><td class="num">${money(r.costValue)}</td><td class="num">${money(r.retailValue)}</td>
-      <td class="num">${money(r.cogs30d)}</td><td class="num">${num(r.turnoverRate, 2)}×</td><td class="num">${money(r.provision)}</td><td class="num">${money(r.netRealisableCost)}</td><td>${meter(r.storageUtilisation)}</td><td>${meter(r.budgetUtilisation)}</td></tr>`).join('');
+      <td class="num">${money(r.cogs30d)}</td><td class="num">${turn(r.turnoverRate, r.costValue)}</td><td class="num">${money(r.provision)}</td><td class="num">${money(r.netRealisableCost)}</td><td>${meter(r.storageUtilisation)}</td><td>${meter(r.budgetUtilisation)}</td></tr>`).join('');
+  }
+
+  // ---------- festivals (节日备货) ----------
+  loaders.festivals = async () => {
+    const plan = await api('/analytics/festival-plan?horizonDays=' + $('#festHorizon').value);
+    state.fest = plan;
+    $('#lessonCard').hidden = !plan.lessons.length;
+    $('#lessonTable').innerHTML = `<tr><th>Region</th><th class="num">Received</th><th class="num">Sold</th><th class="num">Sell-through</th><th class="num">Returned</th><th class="num">Written off</th><th class="num">Still on hand</th><th class="num">Unsold at cost</th></tr>` +
+      plan.lessons.map(l => `<tr><td><b>${esc(l.regionCode)}</b> ${esc(l.regionName)}</td><td class="num">${num(l.received)}</td><td class="num">${num(l.sold)}</td>
+      <td class="num"><b>${pct(l.sellThrough)}</b></td><td class="num">${num(l.returned)}</td><td class="num">${num(l.writtenOff)}</td><td class="num">${num(l.stillOnHand)}</td><td class="num">${money(l.unsoldCost)}</td></tr>`).join('');
+    if (!plan.events.some(e => e.code === state.festCode)) state.festCode = plan.events[0] ? plan.events[0].code : null;
+    $('#festCards').innerHTML = plan.events.map(e => `<button class="fest-card ${e.code === state.festCode ? 'on' : ''}" data-code="${esc(e.code)}">
+      <div class="fname">${esc(e.name)}</div><div class="fdate">${e.date} · in ${e.daysAway} day${e.daysAway === 1 ? '' : 's'}</div>
+      <div class="fval">${money(e.totalCost)}</div><div class="fnote">${num(e.totalUnits)} extra units · ${e.lines.length} shop/SKU lines</div></button>`).join('')
+      || '<p class="hint">No festivals in this window.</p>';
+    document.querySelectorAll('#festCards .fest-card').forEach(b => b.onclick = () => { state.festCode = b.dataset.code; loaders.festivals(); });
+    renderFestLines();
+  };
+  function renderFestLines() {
+    const e = state.fest ? state.fest.events.find(x => x.code === state.festCode) : null;
+    $('#festDetail').hidden = !e;
+    if (!e) return;
+    $('#festTitle').textContent = `${e.name} · ${e.date} · sales window ${e.windowStart} → ${e.windowEnd}`;
+    $('#festStory').textContent = e.story;
+    const q = $('#festSearch').value.trim().toLowerCase();
+    const rows = e.lines.filter(l => !q || (l.shopCode + l.shopName + l.skuCode + l.skuName).toLowerCase().includes(q));
+    const md = d => d.slice(5);
+    $('#festLines').innerHTML = `<tr><th>Shop</th><th>Region</th><th>SKU</th><th class="num">Normal / day</th><th class="num">Uplift</th><th class="num">Festival demand</th><th class="num">Pre-stock</th><th class="num">At cost</th><th>Receive between</th><th>Why</th><th></th></tr>` +
+      rows.slice(0, 300).map(l => `<tr><td><b>${esc(l.shopCode)}</b> ${esc(l.shopName)}</td><td>${esc(l.regionCode)}</td><td><b>${esc(l.skuCode)}</b> ${esc(l.skuName)}</td>
+      <td class="num">${l.factor ? num(l.baselineDaily, 1) : "–"}</td><td class="num">${l.factor ? num(l.factor, 1) + '×' : 'seasonal'}</td><td class="num">${num(l.expectedUnits)}</td>
+      <td class="num"><b>${num(l.recommendedQty)}</b>${l.cappedBy ? `<span class="cap">${esc(l.cappedBy.toLowerCase())} cap</span>` : ''}</td><td class="num">${money(l.cost)}</td>
+      <td>${md(l.orderFrom)} → ${md(l.orderBy)}</td><td class="hint why">${esc(l.note)}</td>
+      <td><button class="small ghost" data-shop="${l.shopId}" data-sku="${l.skuId}" data-qty="${l.recommendedQty}">Stock-in</button></td></tr>`).join('') +
+      (rows.length > 300 ? `<tr><td colspan="11" class="hint">Showing the 300 largest of ${rows.length} lines. Search to narrow down.</td></tr>` : '');
+    document.querySelectorAll('#festLines button[data-qty]').forEach(b => b.onclick = () => {
+      location.hash = '#movements';
+      setTimeout(() => { const f = $('#stockInForm'); f.shopId.value = b.dataset.shop; f.skuId.value = b.dataset.sku; f.quantity.value = b.dataset.qty;
+        f.batchProductionDate.value = localDate(); f.reference.value = 'FEST-' + state.festCode; updateHeadroom(); }, 50);
+    });
   }
 
   // ---------- regions ----------
@@ -199,7 +242,7 @@ const App = (() => {
       location.hash = '#movements';
       setTimeout(() => {
         const f = $('#stockInForm'); f.shopId.value = b.dataset.shop; f.skuId.value = b.dataset.sku; f.quantity.value = b.dataset.qty;
-        f.batchProductionDate.value = new Date().toISOString().slice(0, 10); updateHeadroom();
+        f.batchProductionDate.value = localDate(); updateHeadroom();
       }, 50);
     });
   }
@@ -384,10 +427,10 @@ const App = (() => {
     $('#csvLink').href = `/api/reports/${period}/csv`;
     $('#reportRegions').innerHTML = `<tr><th>Region</th><th class="num">Shops</th><th class="num">V<sub>cost</sub></th><th class="num">V<sub>retail</sub></th><th class="num">COGS 30d</th><th class="num">Turnover</th><th class="num">Provision</th><th class="num">Net realisable</th></tr>` +
       report.regions.map(g => `<tr><td><b>${esc(g.regionCode)}</b> ${esc(g.regionName)}</td><td class="num">${g.shopCount}</td><td class="num">${money(g.costValue)}</td><td class="num">${money(g.retailValue)}</td><td class="num">${money(g.cogs30d)}</td>
-      <td class="num">${num(g.turnoverRate, 2)}×</td><td class="num">${money(g.provision)}</td><td class="num">${money(g.netRealisableCost)}</td></tr>`).join('');
+      <td class="num">${turn(g.turnoverRate, g.costValue)}</td><td class="num">${money(g.provision)}</td><td class="num">${money(g.netRealisableCost)}</td></tr>`).join('');
     $('#reportLines').innerHTML = `<tr><th>Shop</th><th>Region</th><th>City</th><th class="num">V<sub>cost</sub></th><th class="num">V<sub>retail</sub></th><th class="num">COGS 30d</th><th class="num">Turnover</th><th class="num">Provision</th><th class="num">High-risk cost</th><th class="num">Expired cost</th><th>Storage</th><th>Budget</th></tr>` +
       lines.map(l => `<tr><td><b>${esc(l.shopCode)}</b> ${esc(l.shopName)}</td><td>${esc(l.regionCode)}</td><td>${esc(l.city)}</td><td class="num">${money(l.costValue)}</td><td class="num">${money(l.retailValue)}</td><td class="num">${money(l.cogs30d)}</td>
-      <td class="num">${num(l.turnoverRate, 2)}×</td><td class="num">${money(l.provision)}</td><td class="num">${money(l.highRiskCost)}</td><td class="num">${money(l.expiredCost)}</td><td>${meter(l.storageUtilisation)}</td><td>${meter(l.budgetUtilisation)}</td></tr>`).join('');
+      <td class="num">${turn(l.turnoverRate, l.costValue)}</td><td class="num">${money(l.provision)}</td><td class="num">${money(l.highRiskCost)}</td><td class="num">${money(l.expiredCost)}</td><td>${meter(l.storageUtilisation)}</td><td>${meter(l.budgetUtilisation)}</td></tr>`).join('');
   }
 
   // ---------- wiring ----------
@@ -402,7 +445,7 @@ const App = (() => {
     const inF = $('#stockInForm'), outF = $('#stockOutForm');
     inF.shopId.onchange = inF.skuId.onchange = updateHeadroom;
     outF.shopId.onchange = outF.skuId.onchange = updateOutBatches;
-    inF.batchProductionDate.max = new Date().toISOString().slice(0, 10);
+    inF.batchProductionDate.max = localDate();
     inF.onsubmit = async ev => {
       ev.preventDefault();
       try { const r = await api('/inventory/stock-in', { method: 'POST', body: JSON.stringify(formData(inF)) }); $('#stockInResult').innerHTML = movementResult(r, 'Stock received'); updateHeadroom(); updateOutBatches(); }
@@ -421,7 +464,7 @@ const App = (() => {
     };
     const gen = $('#genForm');
     const lastMonth = new Date(); lastMonth.setDate(1); lastMonth.setMonth(lastMonth.getMonth() - 1);
-    gen.period.value = lastMonth.toISOString().slice(0, 7);
+    gen.period.value = localDate(lastMonth).slice(0, 7);
     gen.onsubmit = async ev => {
       ev.preventDefault();
       try { await api('/reports/generate?period=' + gen.period.value, { method: 'POST' }); toast('Report ' + gen.period.value + ' generated'); $('#reportDetail').hidden = true; loaders.reports(); }
@@ -436,6 +479,8 @@ const App = (() => {
     try { const t = localStorage.getItem('theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
     window.addEventListener('hashchange', route);
     $('#regionFilter').onchange = () => loaders.dashboard();
+    $('#festHorizon').onchange = () => loaders.festivals();
+    $('#festSearch').oninput = renderFestLines;
     $('#loginForm').onsubmit = async ev => {
       ev.preventDefault();
       try {
@@ -446,9 +491,9 @@ const App = (() => {
     };
     $('#logoutBtn').onclick = async () => {
       try { await api('/auth/logout', { method: 'POST' }); } catch (e) {}
-      state.me = null; Object.values(state.charts).forEach(c => c.destroy()); state.charts = {};
-      state.velocityShop = null; $('#velocityCard').hidden = true; $('#reportDetail').hidden = true;
-      showLogin();
+      // full reload: no rendered data from this user may remain in the DOM for the next person at a shared till
+      state.me = null;
+      location.replace(location.pathname);
     };
   }
 
@@ -478,7 +523,7 @@ const App = (() => {
 
   async function init() {
     wire();
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localDate();
     $('#stockInForm').batchProductionDate.value = today;
     try { state.me = await api('/auth/me'); await startSession(); }
     catch (e) { showLogin(); }

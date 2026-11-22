@@ -160,3 +160,15 @@ h3.spaced { margin-top: 18px; }
 
 [hidden] { display: none !important; }
 .brand .cn { color: var(--ink-2); font-weight: 500; margin-left: 2px; }
+
+/* festival planner */
+.fest-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-bottom: 18px; }
+.fest-card { text-align: left; background: var(--surface); color: var(--ink); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; box-shadow: var(--shadow); cursor: pointer; }
+.fest-card:hover { background: var(--surface-2); }
+.fest-card.on { outline: 2px solid var(--accent); outline-offset: -1px; }
+.fest-card .fname { font-weight: 650; font-size: 15px; }
+.fest-card .fdate { color: var(--ink-2); font-size: 12.5px; margin-top: 2px; }
+.fest-card .fval { font-size: 20px; font-weight: 650; margin-top: 8px; }
+.fest-card .fnote { color: var(--muted); font-size: 12px; }
+.cap { display: inline-block; font-size: 11.5px; padding: 0 6px; border-radius: 999px; border: 1px solid var(--border); color: var(--ink-2); margin-left: 4px; }
+td.why { white-space: normal; min-width: 260px; }

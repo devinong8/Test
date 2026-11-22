@@ -18,7 +18,8 @@
     <a href="#ledger" data-page="ledger">Ledger</a>
     <a href="#skus" data-page="skus">SKUs</a>
     <a href="#shops" data-page="shops">Shops</a>
-    <a href="#reports" data-page="reports" data-roles="HQ_ADMIN,REGION_MANAGER">Monthly Reports</a>
+    <a href="#festivals" data-page="festivals">节日备货 Festivals</a>
+    <a href="#reports" data-page="reports" data-roles="HQ_ADMIN,REGION_MANAGER">Reports</a>
   </nav>
   <div class="userchip" id="userChip" hidden>
     <div><div class="uname" id="userName"></div><div class="urole" id="userRole"></div></div>
@@ -162,6 +163,26 @@
         <button type="submit">Set velocity</button>
       </form>
       <div class="table-wrap"><table id="velocityTable" class="data"></table></div>
+    </div>
+  </section>
+
+  <!-- FESTIVALS -->
+  <section id="page-festivals" class="page">
+    <div class="page-head">
+      <div><h1>节日备货 Festival pre-stock plan</h1>
+        <p class="sub">Extra stock to receive for upcoming Chinese retail events, per shop. Receive windows keep stock in the NORMAL depreciation tier through the festival. One-off seasonal lines are sized by how last season's mooncakes actually sold.</p></div>
+      <label class="compact">Look ahead <select id="festHorizon"><option value="30">30 days</option><option value="60">60 days</option><option value="90" selected>90 days</option><option value="120">120 days</option></select></label>
+    </div>
+    <div class="card" id="lessonCard">
+      <h3>中秋 lesson: what happened to last season's mooncakes</h3>
+      <p class="hint">From the ledger. Sell-through = sold ÷ received. Anything unsold was returned, written off, or is still on the shelf past its shelf life.</p>
+      <div class="table-wrap"><table id="lessonTable" class="data"></table></div>
+    </div>
+    <div class="fest-cards" id="festCards"></div>
+    <div class="card" id="festDetail" hidden>
+      <div class="row-between"><div><h3 id="festTitle"></h3><p class="hint" id="festStory"></p></div></div>
+      <div class="filters"><label>Search <input id="festSearch" placeholder="Shop or SKU"></label></div>
+      <div class="table-wrap"><table id="festLines" class="data"></table></div>
     </div>
   </section>
 

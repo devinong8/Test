@@ -132,7 +132,7 @@ class ApiIntegrationTest extends TestSupport {
                 .andExpect(jsonPath("$.report.totalCostValue").value(140.0));
         mvc.perform(get("/api/reports/2026-11/csv"))
                 .andExpect(content().contentTypeCompatibleWith("text/csv"))
-                .andExpect(content().string(containsString("2026-11,R-DEFAULT,SH-01")));
+                .andExpect(content().string(containsString("2026-11,\"R-DEFAULT\",\"SH-01\"")));
         mvc.perform(get("/api/reports/not-a-month")).andExpect(status().isBadRequest());
 
         mvc.perform(get("/actuator/health")).andExpect(jsonPath("$.status").value("UP"));

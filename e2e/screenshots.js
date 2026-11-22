@@ -43,6 +43,10 @@ const out = path.join(__dirname, '..', 'docs', 'screenshots');
   check((await page.textContent('#dashTitle')).includes('SH-01'), 'shop manager lands on own-shop dashboard');
   check(await page.locator('#shopTable tr').count() === 2, 'shop manager sees exactly one shop');
   check(!(await page.isVisible('#nav a[data-page=reports]')) && !(await page.isVisible('#nav a[data-page=regions]')), 'shop manager has no Reports/Regions tabs');
+  await page.goto(base + '/#festivals');
+  await page.waitForSelector('#festCards .fest-card');
+  const shopCodes = await page.$$eval('#festLines tbody tr td:first-child b', els => [...new Set(els.map(e => e.textContent))]);
+  check(shopCodes.length === 1 && shopCodes[0] === 'SH-01', 'shop manager festival plan covers only SH-01');
   await page.goto(base + '/#skus');
   await page.waitForSelector('#skuTable tr:nth-child(2)');
   check(!(await page.isVisible('#page-skus button[data-roles]')), 'shop manager cannot add SKUs');
@@ -111,6 +115,16 @@ const out = path.join(__dirname, '..', 'docs', 'screenshots');
   await page.waitForSelector('#regionMasterTable tr:nth-child(2)');
   check(await page.locator('#regionMasterTable tr').count() === 5, 'regions page lists all 4 regions');
   await page.screenshot({ path: `${out}/12-regions.png` });
+
+  await page.goto(base + '/#festivals');
+  await page.waitForSelector('#festCards .fest-card');
+  const festNames = await page.locator('#festCards .fname').allTextContents();
+  check(['双十二', '冬至', '平安夜', '春节'].every(n => festNames.some(t => t.includes(n))), 'festival plan shows 双十二, 冬至, 平安夜 and 春节');
+  check(await page.locator('#lessonTable tr').count() === 5, '中秋 lesson shows all 4 regions');
+  await page.locator('#festCards .fest-card', { hasText: '平安夜' }).click();
+  await page.waitForFunction(() => document.querySelector('#festTitle').textContent.includes('平安夜'));
+  check((await page.textContent('#festLines')).includes('XMAS-APPLE'), 'Christmas Eve plan recommends 平安果 apples');
+  await page.screenshot({ path: `${out}/13-festival-plan.png`, fullPage: true });
 
   await page.goto(base + '/#reports');
   await page.waitForSelector('#reportLines tr:nth-child(2)');

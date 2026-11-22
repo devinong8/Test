@@ -38,6 +38,8 @@ public interface InventoryBatchRepository extends JpaRepository<InventoryBatch, 
     @Query("select coalesce(sum(b.onHandQty), 0) from InventoryBatch b where b.shop.id = :shopId and b.sku.id = :skuId")
     long onHand(@Param("shopId") Long shopId, @Param("skuId") Long skuId);
 
+    List<InventoryBatch> findByShopIdAndSkuIdAndOnHandQtyGreaterThan(Long shopId, Long skuId, long qty);
+
     boolean existsByShopIdAndOnHandQtyGreaterThan(Long shopId, long qty);
     boolean existsBySkuIdAndOnHandQtyGreaterThan(Long skuId, long qty);
 }

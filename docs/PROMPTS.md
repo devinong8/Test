@@ -59,3 +59,9 @@ The assistant explained that the seed was a synthetic Southeast-Asian dataset (S
 - **Locale:** Asia/Shanghai time zone, ¥ formatting with 万/亿 on chart axes, and Chinese fonts in the UI.
 - **Seasonal events:** the Mid-Autumn mooncake cycle (over-order → post-festival returns, write-offs or expired stock) and Double 11 demand.
 - **Alerts:** now ranked by value at risk, so the mooncake write-off leads the alert list.
+
+## 7. Fourth iteration: independent review + a Christmas-time, China-relevant feature
+
+> You are a reviewer agent - review what was built and documented. Its almost Christmas. So something relatable and chinese. As the hackathon is in china
+
+The assistant reviewed the code and docs, wrote failing tests to prove each suspected bug before fixing it (see `docs/REVIEW.md`), then added the **节日备货 festival pre-stock planner**: 双十二, 冬至 (dumplings north / tangyuan south), 平安夜 平安果 apples, and 春节. One-off seasonal lines are sized by the mooncake sell-through learned from the ledger.

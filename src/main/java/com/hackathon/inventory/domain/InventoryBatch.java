@@ -9,7 +9,9 @@ import java.time.LocalDate;
  * depreciation risk depends on each batch's production date.
  */
 @Entity
-@Table(name = "inventory_batch", indexes = {
+@Table(name = "inventory_batch",
+        uniqueConstraints = @UniqueConstraint(name = "uk_batch_shop_sku_no", columnNames = {"shop_id", "sku_id", "batchNo"}),
+        indexes = {
         @Index(name = "ix_batch_shop_sku", columnList = "shop_id,sku_id"),
         @Index(name = "ix_batch_prod", columnList = "batchProductionDate")})
 public class InventoryBatch {

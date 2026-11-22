@@ -163,4 +163,39 @@ class InventoryServiceIntegrationTest extends TestSupport {
         long ledgerSum = txnRepo.findAll().stream().mapToLong(StockTransaction::getQuantityDelta).sum();
         assertThat(ledgerSum).isEqualTo(10);               // ledger and balance agree
     }
+
+    @Test
+    void concurrentStockInsNeverBreachStorageCapacity() throws Exception {
+        Shop shop = shop("SH-01", "1.000", "100000");
+        Sku water = sku("WATER", "18.00", "29.90", "0.1", 540);          // 2 units = 0.2 m3 -> at most 5 receipts fit
+
+        int threads = 12;
+        ExecutorService pool = Executors.newFixedThreadPool(threads);
+        CountDownLatch go = new CountDownLatch(1);
+        AtomicInteger ok = new AtomicInteger();
+        List<Future<?>> fs = new ArrayList<>();
+        for (int i = 0; i < threads; i++)
+            fs.add(pool.submit(() -> {
+                go.await();
+                try { inventory.stockIn(in(shop, water, 2, TODAY)); ok.incrementAndGet(); }
+                catch (BusinessRuleException e) { /* rejected: over capacity */ }
+                return null;
+            }));
+        go.countDown();
+        for (Future<?> f : fs) f.get(30, TimeUnit.SECONDS);
+        pool.shutdown();
+
+        assertThat(batchRepo.usedVolume(shop.getId())).isLessThanOrEqualTo(new java.math.BigDecimal("1.000"));
+        assertThat(ok.get()).isEqualTo(5);
+        assertThat(batchRepo.findAll()).hasSize(1);                         // one batch, never duplicated
+    }
+
+    @Test
+    void productionDateInTheFutureIsRejectedUsingBusinessClock() {
+        Shop shop = shop("SH-01", "100", "10000");
+        Sku milk = sku("MILK", "9.50", "14.90", "0.001", 7);
+        assertThatThrownBy(() -> inventory.stockIn(in(shop, milk, 1, TODAY.plusDays(1))))
+                .hasFieldOrPropertyWithValue("code", "INVALID_PRODUCTION_DATE");
+        assertThat(inventory.stockIn(in(shop, milk, 1, TODAY)).onHandAfter()).isEqualTo(1);
+    }
 }

@@ -77,11 +77,14 @@ public class DataSeeder implements ApplicationRunner {
             new SkuDef("TANGYUAN", "汤圆 Glutinous Rice Balls 500g", "冷冻 Frozen", "8.50", "14.90", "0.00100", 270, 3),
             new SkuDef("SEEDS-500", "瓜子 Roasted Sunflower Seeds 500g", "休闲零食 Snacks", "9.00", "16.80", "0.00200", 240, 8),
             new SkuDef("MOON-GIFT", "月饼礼盒 Mooncake Gift Box", "节令 Seasonal", "88.00", "168.00", "0.00800", 60, 6),
+            new SkuDef("XMAS-APPLE", "平安果礼盒 Christmas Eve Apple Gift Box ×2", "节令 Seasonal", "8.00", "19.90", "0.00200", 21, 0),
             new SkuDef("TISSUE-10", "抽纸 Facial Tissue ×10", "家清 Household", "15.00", "24.90", "0.01200", 1095, 5),
             new SkuDef("LAUND-2KG", "洗衣液 Laundry Liquid 2kg", "家清 Household", "22.00", "35.90", "0.00250", 730, 3),
             new SkuDef("TOOTH-120", "牙膏 Toothpaste 120g", "个护 Personal Care", "8.00", "14.90", "0.00020", 730, 4));
 
     private static final String MOONCAKE = "MOON-GIFT";
+    /** 平安果: ranged in every shop for 平安夜 but not yet sold this year (no history, zero velocity). */
+    private static final String XMAS_APPLE = "XMAS-APPLE";
     /** Mid-Autumn Festival dates (15th day of the 8th lunar month). */
     private static final List<LocalDate> MID_AUTUMN = List.of(LocalDate.of(2025, 10, 6), LocalDate.of(2026, 9, 25),
             LocalDate.of(2027, 9, 15), LocalDate.of(2028, 10, 3), LocalDate.of(2029, 9, 22));
@@ -128,12 +131,12 @@ public class DataSeeder implements ApplicationRunner {
         LocalDate start = today.minusDays(HISTORY_DAYS);
         LocalDate lastSimulated = today.minusDays(1);   // never write future-dated ledger entries
 
-        int mooncakeIdx = indexOf(MOONCAKE);
+        int mooncakeIdx = indexOf(MOONCAKE), appleIdx = indexOf(XMAS_APPLE);
         for (String[] city : CITIES) {
             for (int a = 0; a < 3; a++) {
                 double scale = 0.6 + rnd.nextDouble() * 0.9;   // shop size
                 List<Integer> idx = new ArrayList<>();
-                for (int i = 0; i < skuList.size(); i++) if (i != mooncakeIdx) idx.add(i);
+                for (int i = 0; i < skuList.size(); i++) if (i != mooncakeIdx && i != appleIdx) idx.add(i);
                 Collections.shuffle(idx, rnd);
                 List<Integer> carried = new ArrayList<>(idx.subList(0, 11 + rnd.nextInt(6)));
                 carried.add(mooncakeIdx);   // every Chinese store sells mooncakes before Mid-Autumn
@@ -158,6 +161,7 @@ public class DataSeeder implements ApplicationRunner {
                 for (int i : carried)   // mooncakes: season is over, so the current sales rate is zero
                     velocities.save(new SalesVelocity(shop, skuList.get(i),
                             i == mooncakeIdx ? BigDecimal.ZERO : BigDecimal.valueOf(vel.get(i))));
+                velocities.save(new SalesVelocity(shop, skuList.get(appleIdx), BigDecimal.ZERO));   // ranged for 平安夜
 
                 for (int i : carried)
                     tx.executeWithoutResult(s -> simulate(shop, i, skuList, vel, start, lastSimulated, zone, rnd));
